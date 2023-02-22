@@ -6,13 +6,15 @@ from warp_drive.utils.constants import Constants
 from warp_drive.utils.data_feed import DataFeed
 from warp_drive.utils.gpu_environment_context import CUDAEnvironmentContext
 
+
 class Environment(CUDAEnvironmentContext):
 
-    def __init__(num_preys = 50, 
-                 num_predator = 1, 
-                 stage_size = 100.0,
-                 episod_length = 240,
-                 preparation_length = 120,
+    def __init__(self,
+                 num_preys=50,
+                 num_predators=1,
+                 stage_size=100.0,
+                 episode_length=240,
+                 preparation_length=120,
                  starting_location_x=None,
                  starting_location_y=None,
                  max_speed=1.0,
@@ -23,7 +25,7 @@ class Environment(CUDAEnvironmentContext):
                  num_acceleration_levels=10,
                  num_turn_levels=10,
                  edge_hit_penalty=-1.0,
-                ):
+                 ):
         super().__init__()
 
         # ENVIRONMENT
@@ -31,22 +33,21 @@ class Environment(CUDAEnvironmentContext):
         self.int_dtype = np.int32
         # small number to prevent indeterminate cases
         self.eps = self.float_dtype(1e-10)
-        
+
         # Seeding
         self.np_random = np.random
         if seed is not None:
-        self.seed(seed)
-        
+            self.seed(seed)
+
         # Length and preparation
         assert episode_length > 0
         self.episode_length = episode_length
         self.preparation_length = preparation_length
-        
-        # Square 2D grid
-        assert grid_length > 0
-        self.grid_length = self.float_dtype(grid_length)
-        self.grid_diagonal = self.grid_length * np.sqrt(2)
 
+        # Square 2D grid
+        assert stage_size > 0
+        self.stage_size = self.float_dtype(stage_size)
+        self.grid_diagonal = self.stage_size * np.sqrt(2)
 
         # AGENTS
         assert num_preys > 0
@@ -54,16 +55,16 @@ class Environment(CUDAEnvironmentContext):
         assert num_predators > 0
         self.num_predators = num_predators
         self.num_agents = self.num_preys + self.num_predators
-        
+
         # Initializing the ids of predators and preys
         # predators' ids
         predators_ids = self.np_random.choice(
             np.arange(self.num_agents), self.num_predators, replace=False
         )
 
-        self.agent_type = {}
-        self.predators = {}
-        self.preys = {}
+        self.agent_type = {}    # 0 for preys, 1 for predators
+        self.predators = {}     # predator ids
+        self.preys = {}         # prey ids
         for agent_id in range(self.num_agents):
             if agent_id in set(predators_ids):
                 self.agent_type[agent_id] = 1  # Predators
@@ -72,11 +73,10 @@ class Environment(CUDAEnvironmentContext):
                 self.agent_type[agent_id] = 0  # Preys
                 self.preys[agent_id] = True
 
-                
         # Set the starting positions
+        # If no starting positions are provided, then randomly initialize them
         if starting_location_x is None:
             assert starting_location_y is None
-
             starting_location_x = self.grid_length * self.np_random.rand(
                 self.num_agents
             )
@@ -86,25 +86,21 @@ class Environment(CUDAEnvironmentContext):
         else:
             assert len(starting_location_x) == self.num_agents
             assert len(starting_location_y) == self.num_agents
-            
         self.starting_location_x = starting_location_x
         self.starting_location_y = starting_location_y
-        
+
+        # Set the starting directions
         self.starting_directions = self.np_random.choice(
-                [0, np.pi / 2, np.pi, np.pi * 3 / 2], self.num_agents, replace=True
-            )
-        
+            [0, np.pi / 2, np.pi, np.pi * 3 / 2], self.num_agents, replace=True
+        )
 
         # All agents start with 0 speed and acceleration
         self.starting_speeds = np.zeros(self.num_agents, dtype=self.float_dtype)
         self.starting_accelerations = np.zeros(self.num_agents, dtype=self.float_dtype)
 
-        assert num_acceleration_levels >= 0
-        assert num_turn_levels >= 0
-
         # Set the max speed level
         self.max_speed = self.float_dtype(max_speed)
-        
+
         # ACTION SPACE
         # The num_acceleration and num_turn levels refer to the number of
         # uniformly-spaced levels between (min_acceleration and max_acceleration)
@@ -135,20 +131,20 @@ class Environment(CUDAEnvironmentContext):
         # Add action 0 - this will be the no-op, or 0 turn
         self.turn_actions = np.insert(self.turn_actions, 0, 0).astype(self.float_dtype)
 
-        
         # These will be set during reset (see below)
         self.timestep = None
         self.global_state = None
-        
-        # OBSERVATION AND ACTIONS SPACE
-        self.observation_space = None  # Note: this will be set via the env_wrapper
+
         self.action_space = {
             agent_id: spaces.MultiDiscrete(
                 (len(self.acceleration_actions), len(self.turn_actions))
             )
             for agent_id in range(self.num_agents)
         }
-        
+
+        # OBSERVATION SPACE
+        self.observation_space = None  # Note: this will be set via the env_wrapper
+
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
         assert num_other_agents_observed <= self.num_agents
@@ -161,9 +157,9 @@ class Environment(CUDAEnvironmentContext):
         self.distance_margin_for_reward = (tagging_distance * self.grid_length).astype(
             self.float_dtype
         )
-        
+
     name = "SimulationEnvironment"
-    
+
     def seed(self, seed=None):
         """
         Seeding the environment with a desired seed
@@ -172,7 +168,7 @@ class Environment(CUDAEnvironmentContext):
         """
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
-    
+
     def set_global_state(self, key=None, value=None, t=None, dtype=None):
         """
         Set the global state for a specified key, value and timestep.
@@ -193,5 +189,3 @@ class Environment(CUDAEnvironmentContext):
             assert value.shape[0] == self.global_state[key].shape[1]
 
             self.global_state[key][t] = value
-
-
