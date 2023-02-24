@@ -175,7 +175,7 @@ class Environment(CUDAEnvironmentContext):
         )
 
         # Copy preys dict for applying at reset
-        self.preys_at_reset = copy.deepcopy(self.runners)
+        self.preys_at_reset = copy.deepcopy(self.preys)
 
     name = "SimulationEnvironment"
 
@@ -528,7 +528,7 @@ class Environment(CUDAEnvironmentContext):
 
         # Reinitialize some variables that may have changed during previous episode
         self.preys = copy.deepcopy(self.preys_at_reset)
-        self.num_preys = len(self.runners)
+        self.num_preys = len(self.preys)
 
         return self.generate_observation()
 
