@@ -18,6 +18,7 @@ _ACC = "acceleration"
 _SIG = "still_in_the_game"
 _DONE = "done"
 
+
 class Environment(CUDAEnvironmentContext):
 
     def __init__(self,
@@ -33,6 +34,8 @@ class Environment(CUDAEnvironmentContext):
                  min_acceleration=-1.0,
                  max_turn=np.pi / 2,
                  min_turn=-np.pi / 2,
+                 max_seeing_angle=np.pi / 2,
+                 max_seeing_distance=10.0,
                  num_acceleration_levels=10,
                  num_turn_levels=10,
                  eating_reward_for_predator=10.0,
@@ -80,9 +83,9 @@ class Environment(CUDAEnvironmentContext):
             np.arange(self.num_agents), self.num_predators, replace=False
         )
 
-        self.agent_type = {}    # 0 for preys, 1 for predators
-        self.predators = {}     # predator ids
-        self.preys = {}         # prey ids
+        self.agent_type = {}  # 0 for preys, 1 for predators
+        self.predators = {}  # predator ids
+        self.preys = {}  # prey ids
         for agent_id in range(self.num_agents):
             if agent_id in set(predators_ids):
                 self.agent_type[agent_id] = 1  # Predators
@@ -133,6 +136,9 @@ class Environment(CUDAEnvironmentContext):
         self.max_turn = self.float_dtype(max_turn)
         self.min_turn = self.float_dtype(min_turn)
 
+        self.max_seeing_angle = max_seeing_angle
+        self.max_seeing_distance = max_seeing_distance
+
         # Acceleration actions
         self.acceleration_actions = np.linspace(
             self.min_acceleration, self.max_acceleration, self.num_acceleration_levels
@@ -162,6 +168,7 @@ class Environment(CUDAEnvironmentContext):
 
         # OBSERVATION SPACE
         self.observation_space = None  # Note: this will be set via the env_wrapper
+        self.use_full_observation = use_full_observation
 
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
@@ -209,13 +216,80 @@ class Environment(CUDAEnvironmentContext):
 
             self.global_state[key][t] = value
 
+    def update_state(self, delta_accelerations, delta_turns):
+        """
+        Note: 'update_state' is only used when running on CPU step() only.
+        When using the CUDA step function, this Python method (update_state)
+        is part of the step() function!
+        The logic below mirrors (part of) the step function in CUDA.
+        """
+        loc_x_prev_t = self.global_state[_LOC_X][self.timestep - 1]
+        loc_y_prev_t = self.global_state[_LOC_Y][self.timestep - 1]
+        speed_prev_t = self.global_state[_SP][self.timestep - 1]
+        dir_prev_t = self.global_state[_DIR][self.timestep - 1]
+        acc_prev_t = self.global_state[_ACC][self.timestep - 1]
+
+        # Update direction and acceleration
+        # Do not update location if agent is out of the game !
+        dir_curr_t = (
+            (dir_prev_t + delta_turns) % (2 * np.pi) * self.still_in_the_game
+        ).astype(self.float_dtype)
+
+        acc_curr_t = acc_prev_t + delta_accelerations
+
+        # 0 <= speed <= max_speed (multiplied by the skill levels).
+        # Reset acceleration to 0 when speed is outside this range
+        max_speed = self.max_speed * np.array(self.skill_levels)
+        speed_curr_t = self.float_dtype(
+            np.clip(speed_prev_t + acc_curr_t, 0.0, max_speed) * self.still_in_the_game
+        )
+        acc_curr_t = acc_curr_t * (speed_curr_t > 0) * (speed_curr_t < max_speed)
+
+        loc_x_curr_t = self.float_dtype(
+            loc_x_prev_t + speed_curr_t * np.cos(dir_curr_t)
+        )
+        loc_y_curr_t = self.float_dtype(
+            loc_y_prev_t + speed_curr_t * np.sin(dir_curr_t)
+        )
+
+        # Crossing the edge
+        has_crossed_edge = ~(
+            (loc_x_curr_t >= 0)
+            & (loc_x_curr_t <= self.grid_length)
+            & (loc_y_curr_t >= 0)
+            & (loc_y_curr_t <= self.grid_length)
+        )
+
+        # Clip x and y if agent has crossed edge
+        clipped_loc_x_curr_t = self.float_dtype(
+            np.clip(loc_x_curr_t, 0.0, self.grid_length)
+        )
+
+        clipped_loc_y_curr_t = self.float_dtype(
+            np.clip(loc_y_curr_t, 0.0, self.grid_length)
+        )
+
+        # Penalize reward if agents hit the walls
+        self.edge_hit_reward_penalty = self.edge_hit_penalty * has_crossed_edge
+
+        # Set global states
+        self.set_global_state(key=_LOC_X, value=clipped_loc_x_curr_t, t=self.timestep)
+        self.set_global_state(key=_LOC_Y, value=clipped_loc_y_curr_t, t=self.timestep)
+        self.set_global_state(key=_SP, value=speed_curr_t, t=self.timestep)
+        self.set_global_state(key=_DIR, value=dir_curr_t, t=self.timestep)
+        self.set_global_state(key=_ACC, value=acc_curr_t, t=self.timestep)
+
     def generate_observation(self):
         """
         Generate and return the observations for every agent.
         """
         obs = {}
 
+
         normalized_global_obs = None
+        # Normalize global states
+        # Global states is a dictionary of numpy arrays
+        # Each key is a feature, and each value is a numpy array of shape (episode_length, num_agents)
         for feature in [
             (_LOC_X, self.grid_diagonal),
             (_LOC_Y, self.grid_diagonal),
@@ -225,7 +299,7 @@ class Environment(CUDAEnvironmentContext):
         ]:
             if normalized_global_obs is None:
                 normalized_global_obs = (
-                    self.global_state[feature[0]][self.timestep] / feature[1]
+                        self.global_state[feature[0]][self.timestep] / feature[1]
                 )
             else:
                 normalized_global_obs = np.vstack(
@@ -234,145 +308,50 @@ class Environment(CUDAEnvironmentContext):
                         self.global_state[feature[0]][self.timestep] / feature[1],
                     )
                 )
+
+        # Agent types
         agent_types = np.array(
             [self.agent_type[agent_id] for agent_id in range(self.num_agents)]
         )
+
+        # Time to indicate that the agent is still in the game
         time = np.array([float(self.timestep) / self.episode_length])
 
-        if self.use_full_observation:
-            for agent_id in range(self.num_agents):
-                # Initialize obs
-                obs[agent_id] = np.concatenate(
-                    [
-                        np.vstack(
-                            (
-                                np.zeros_like(normalized_global_obs),
+
+        for agent_id in range(self.num_agents):
+            # Set obs for agents still in the game
+            # obs = [global_obs, agent_types, still_in_the_game, is_visible, time]
+            if self.use_full_observation:
+                is_visible = np.ones_like(self.num_agents)
+            else :
+                is_visible = np.array([self.compute_distance(agent_id, observed_agent_id) < self.max_seeing_distance for observed_agent_id in range(self.num_agents)])
+
+            if self.still_in_the_game[agent_id] and self.use_full_observation:
+                    obs[agent_id] = np.concatenate(
+                        [
+                            np.vstack((
+                                normalized_global_obs - normalized_global_obs[:, agent_id].reshape(-1, 1),
                                 agent_types,
                                 self.still_in_the_game,
-                            )
-                        )[
-                            :,
-                            [idx for idx in range(self.num_agents) if idx != agent_id],
-                        ].reshape(
-                            -1
-                        ),  # filter out the obs for the current agent
+                                is_visible
+                            ))[:,[idx for idx in range(self.num_agents) if idx != agent_id],].reshape(-1), # filter out the obs for the current agent
+                            time,
+                        ]
+                    )
+            else :
+                # Set to 0
+                # obs = [global_obs, agent_types, still_in_the_game, 0]
+                obs[agent_id] = np.concatenate(
+                    [
+                        np.vstack((
+                            np.zeros_like(normalized_global_obs),
+                            agent_types,
+                            self.still_in_the_game,
+                        ))[:, [idx for idx in range(self.num_agents) if idx != agent_id], ].reshape(-1),
+                        # filter out the obs for the current agent
                         np.array([0.0]),
                     ]
                 )
-                # Set obs for agents still in the game
-                if self.still_in_the_game[agent_id]:
-                    obs[agent_id] = np.concatenate(
-                        [
-                            np.vstack(
-                                (
-                                    normalized_global_obs
-                                    - normalized_global_obs[:, agent_id].reshape(-1, 1),
-                                    agent_types,
-                                    self.still_in_the_game,
-                                )
-                            )[
-                                :,
-                                [
-                                    idx
-                                    for idx in range(self.num_agents)
-                                    if idx != agent_id
-                                ],
-                            ].reshape(
-                                -1
-                            ),  # filter out the obs for the current agent
-                            time,
-                        ]
-                    )
-        else:  # use partial observation
-            for agent_id in range(self.num_agents):
-                if self.timestep == 0:
-                    # Set obs to all zeros
-                    obs_global_states = np.zeros(
-                        (
-                            normalized_global_obs.shape[0],
-                            self.num_other_agents_observed,
-                        )
-                    )
-                    obs_agent_types = np.zeros(self.num_other_agents_observed)
-                    obs_still_in_the_game = np.zeros(self.num_other_agents_observed)
-
-                    # Form the observation
-                    self.init_obs = np.concatenate(
-                        [
-                            np.vstack(
-                                (
-                                    obs_global_states,
-                                    obs_agent_types,
-                                    obs_still_in_the_game,
-                                )
-                            ).reshape(-1),
-                            np.array([0.0]),  # time
-                        ]
-                    )
-
-                # Initialize obs to all zeros
-                obs[agent_id] = self.init_obs
-
-                # Set obs for agents still in the game
-                if self.still_in_the_game[agent_id]:
-                    nearest_neighbor_ids = self.k_nearest_neighbors(
-                        agent_id, k=self.num_other_agents_observed
-                    )
-                    # For the case when the number of remaining agent ids is fewer
-                    # than self.num_other_agents_observed (because agents have exited
-                    # the game), we also need to pad obs wih zeros
-                    obs_global_states = np.hstack(
-                        (
-                            normalized_global_obs[:, nearest_neighbor_ids]
-                            - normalized_global_obs[:, agent_id].reshape(-1, 1),
-                            np.zeros(
-                                (
-                                    normalized_global_obs.shape[0],
-                                    self.num_other_agents_observed
-                                    - len(nearest_neighbor_ids),
-                                )
-                            ),
-                        )
-                    )
-                    obs_agent_types = np.hstack(
-                        (
-                            agent_types[nearest_neighbor_ids],
-                            np.zeros(
-                                (
-                                    self.num_other_agents_observed
-                                    - len(nearest_neighbor_ids)
-                                )
-                            ),
-                        )
-                    )
-                    obs_still_in_the_game = (
-                        np.hstack(
-                            (
-                                self.still_in_the_game[nearest_neighbor_ids],
-                                np.zeros(
-                                    (
-                                        self.num_other_agents_observed
-                                        - len(nearest_neighbor_ids)
-                                    )
-                                ),
-                            )
-                        ),
-                    )
-
-                    # Form the observation
-                    obs[agent_id] = np.concatenate(
-                        [
-                            np.vstack(
-                                (
-                                    obs_global_states,
-                                    obs_agent_types,
-                                    obs_still_in_the_game,
-                                )
-                            ).reshape(-1),
-                            time,
-                        ]
-                    )
-
         return obs
 
     def compute_reward(self):
@@ -395,13 +374,13 @@ class Environment(CUDAEnvironmentContext):
 
             preys_to_predators_distances = np.sqrt(
                 (
-                    np.repeat(prey_locations_x, self.num_predators)
-                    - np.tile(predator_locations_x, self.num_preys)
+                        np.repeat(prey_locations_x, self.num_predators)
+                        - np.tile(predator_locations_x, self.num_preys)
                 )
                 ** 2
                 + (
-                    np.repeat(prey_locations_y, self.num_predators)
-                    - np.tile(predator_locations_y, self.num_preys)
+                        np.repeat(prey_locations_y, self.num_predators)
+                        - np.tile(predator_locations_y, self.num_preys)
                 )
                 ** 2
             ).reshape(self.num_preys, self.num_predators)
@@ -425,7 +404,6 @@ class Environment(CUDAEnvironmentContext):
 
         for idx, prey_id in enumerate(preys_list):
             if min_preys_to_predators_distances[idx] < self.distance_margin_for_reward:
-
                 # the prey is eaten!
                 rew[prey_id] += self.tag_penalty_for_prey
                 rew[nearest_predator_ids[idx]] += self.tag_reward_for_predator
@@ -434,7 +412,7 @@ class Environment(CUDAEnvironmentContext):
                 self.still_in_the_game[prey_id] = 0
                 del self.preys[prey_id]
                 self.num_preys -= 1
-                self.global_state[_SIG][self.timestep :, prey_id] = 0
+                self.global_state[_SIG][self.timestep:, prey_id] = 0
 
         if self.timestep == self.episode_length:
             for prey_id in self.preys:
@@ -612,7 +590,7 @@ class Environment(CUDAEnvironmentContext):
             rew = self.compute_reward()
             done = {
                 "__all__": (self.timestep >= self.episode_length)
-                or (self.num_preys == 0)
+                           or (self.num_preys == 0)
             }
             info = {}
 
