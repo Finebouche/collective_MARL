@@ -34,14 +34,13 @@ class Environment(CUDAEnvironmentContext):
                  min_turn=-np.pi / 2,
                  num_acceleration_levels=10,
                  num_turn_levels=10,
+                 eating_reward_for_predator=10.0,
+                 eating_penalty_for_prey=-10.0,
                  edge_hit_penalty=-10,
-                 tag_reward_for_tagger=10.0,
-                 tag_penalty_for_runner=-10.0,
                  end_of_game_penalty=-1,
                  end_of_game_reward=1,
                  use_full_observation=True,
-                 runner_exits_game_after_tagged=True,
-                 tagging_distance=0.02,
+                 eating_distance=0.02,
                  seed=None,
                  ):
         super().__init__()
@@ -95,10 +94,10 @@ class Environment(CUDAEnvironmentContext):
         # If no starting positions are provided, then randomly initialize them
         if starting_location_x is None:
             assert starting_location_y is None
-            starting_location_x = self.grid_length * self.np_random.rand(
+            starting_location_x = self.stage_size * self.np_random.rand(
                 self.num_agents
             )
-            starting_location_y = self.grid_length * self.np_random.rand(
+            starting_location_y = self.stage_size * self.np_random.rand(
                 self.num_agents
             )
         else:
@@ -170,7 +169,7 @@ class Environment(CUDAEnvironmentContext):
         # If a predator is closer than this to a prey,
         # the predator eats the prey
         assert 0 <= eating_distance <= 1
-        self.distance_margin_for_reward = (tagging_distance * self.grid_length).astype(
+        self.distance_margin_for_reward = (eating_distance * self.stage_size).astype(
             self.float_dtype
         )
 
@@ -379,38 +378,38 @@ class Environment(CUDAEnvironmentContext):
         # Initialize rewards
         rew = {agent_id: 0.0 for agent_id in range(self.num_agents)}
 
-        taggers_list = sorted(self.taggers)
+        predators_list = sorted(self.predators)
 
-        # At least one runner present
-        if self.num_runners > 0:
-            runners_list = sorted(self.runners)
-            runner_locations_x = self.global_state[_LOC_X][self.timestep][runners_list]
-            tagger_locations_x = self.global_state[_LOC_X][self.timestep][taggers_list]
+        # At least one prey present
+        if self.num_preys > 0:
+            preys_list = sorted(self.preys)
+            prey_locations_x = self.global_state[_LOC_X][self.timestep][preys_list]
+            predator_locations_x = self.global_state[_LOC_X][self.timestep][predators_list]
 
-            runner_locations_y = self.global_state[_LOC_Y][self.timestep][runners_list]
-            tagger_locations_y = self.global_state[_LOC_Y][self.timestep][taggers_list]
+            prey_locations_y = self.global_state[_LOC_Y][self.timestep][preys_list]
+            predator_locations_y = self.global_state[_LOC_Y][self.timestep][predators_list]
 
-            runners_to_taggers_distances = np.sqrt(
+            preys_to_predators_distances = np.sqrt(
                 (
-                    np.repeat(runner_locations_x, self.num_taggers)
-                    - np.tile(tagger_locations_x, self.num_runners)
+                    np.repeat(prey_locations_x, self.num_predators)
+                    - np.tile(predator_locations_x, self.num_preys)
                 )
                 ** 2
                 + (
-                    np.repeat(runner_locations_y, self.num_taggers)
-                    - np.tile(tagger_locations_y, self.num_runners)
+                    np.repeat(prey_locations_y, self.num_predators)
+                    - np.tile(predator_locations_y, self.num_preys)
                 )
                 ** 2
-            ).reshape(self.num_runners, self.num_taggers)
+            ).reshape(self.num_preys, self.num_predators)
 
-            min_runners_to_taggers_distances = np.min(
-                runners_to_taggers_distances, axis=1
+            min_preys_to_predators_distances = np.min(
+                preys_to_predators_distances, axis=1
             )
-            argmin_runners_to_taggers_distances = np.argmin(
-                runners_to_taggers_distances, axis=1
+            argmin_preys_to_predators_distances = np.argmin(
+                preys_to_predators_distances, axis=1
             )
-            nearest_tagger_ids = [
-                taggers_list[idx] for idx in argmin_runners_to_taggers_distances
+            nearest_predator_ids = [
+                predators_list[idx] for idx in argmin_preys_to_predators_distances
             ]
 
         # Rewards
@@ -420,23 +419,22 @@ class Environment(CUDAEnvironmentContext):
                 rew[agent_id] += self.edge_hit_reward_penalty[agent_id]
                 rew[agent_id] += self.step_rewards[agent_id]
 
-        for idx, runner_id in enumerate(runners_list):
-            if min_runners_to_taggers_distances[idx] < self.distance_margin_for_reward:
+        for idx, prey_id in enumerate(preys_list):
+            if min_preys_to_predators_distances[idx] < self.distance_margin_for_reward:
 
-                # the runner is tagged!
-                rew[runner_id] += self.tag_penalty_for_runner
-                rew[nearest_tagger_ids[idx]] += self.tag_reward_for_tagger
+                # the prey is eaten!
+                rew[prey_id] += self.tag_penalty_for_prey
+                rew[nearest_predator_ids[idx]] += self.tag_reward_for_predator
 
-                if self.runner_exits_game_after_tagged:
-                    # Remove runner from game
-                    self.still_in_the_game[runner_id] = 0
-                    del self.runners[runner_id]
-                    self.num_runners -= 1
-                    self.global_state[_SIG][self.timestep :, runner_id] = 0
+                # Remove prey from game
+                self.still_in_the_game[prey_id] = 0
+                del self.preys[prey_id]
+                self.num_preys -= 1
+                self.global_state[_SIG][self.timestep :, prey_id] = 0
 
         if self.timestep == self.episode_length:
-            for runner_id in self.runners:
-                rew[runner_id] += self.end_of_game_reward_for_runner
+            for prey_id in self.preys:
+                rew[prey_id] += self.end_of_game_reward_for_prey
 
         return rew
 
@@ -456,60 +454,30 @@ class Environment(CUDAEnvironmentContext):
             data=[self.agent_type[agent_id] for agent_id in range(self.num_agents)],
         )
         data_dict.add_data(
-            name="num_runners", data=self.num_runners, save_copy_and_apply_at_reset=True
+            name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
         )
-        data_dict.add_data(
-            name="num_other_agents_observed", data=self.num_other_agents_observed
-        )
-        data_dict.add_data(name="grid_length", data=self.grid_length)
-        data_dict.add_data(
-            name="edge_hit_reward_penalty",
-            data=self.edge_hit_reward_penalty,
-            save_copy_and_apply_at_reset=True,
-        )
-        data_dict.add_data(
-            name="step_rewards",
-            data=self.step_rewards,
-        )
+        data_dict.add_data(name="stage_size", data=self.stage_size)
         data_dict.add_data(name="edge_hit_penalty", data=self.edge_hit_penalty)
         data_dict.add_data(name="max_speed", data=self.max_speed)
         data_dict.add_data(name="acceleration_actions", data=self.acceleration_actions)
         data_dict.add_data(name="turn_actions", data=self.turn_actions)
-        data_dict.add_data(name="skill_levels", data=self.skill_levels)
         data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
         data_dict.add_data(
             name="distance_margin_for_reward", data=self.distance_margin_for_reward
         )
         data_dict.add_data(
-            name="tag_reward_for_tagger", data=self.tag_reward_for_tagger
+            name="eating_reward_for_predator", data=self.eating_reward_for_predator
         )
         data_dict.add_data(
-            name="tag_penalty_for_runner", data=self.tag_penalty_for_runner
+            name="eating_penalty_for_prey", data=self.eating_penalty_for_prey
         )
         data_dict.add_data(
-            name="end_of_game_reward_for_runner",
-            data=self.end_of_game_reward_for_runner,
+            name="end_of_game_penalty",
+            data=self.end_of_game_penalty,
         )
         data_dict.add_data(
-            name="neighbor_distances",
-            data=np.zeros((self.num_agents, self.num_agents - 1), dtype=np.float32),
-            save_copy_and_apply_at_reset=True,
-        )
-        data_dict.add_data(
-            name="neighbor_ids_sorted_by_distance",
-            data=np.zeros((self.num_agents, self.num_agents - 1), dtype=np.int32),
-            save_copy_and_apply_at_reset=True,
-        )
-        data_dict.add_data(
-            name="nearest_neighbor_ids",
-            data=np.zeros(
-                (self.num_agents, self.num_other_agents_observed), dtype=np.int32
-            ),
-            save_copy_and_apply_at_reset=True,
-        )
-        data_dict.add_data(
-            name="runner_exits_game_after_tagged",
-            data=self.runner_exits_game_after_tagged,
+            name="end_of_game_reward",
+            data=self.end_of_game_reward,
         )
         data_dict.add_data(
             name="still_in_the_game",
@@ -546,23 +514,17 @@ class Environment(CUDAEnvironmentContext):
                 "acceleration_actions",
                 "turn_actions",
                 "max_speed",
-                "num_other_agents_observed",
-                "skill_levels",
-                "runner_exits_game_after_tagged",
                 "still_in_the_game",
                 "use_full_observation",
                 _OBSERVATIONS,
                 _ACTIONS,
-                "neighbor_distances",
-                "neighbor_ids_sorted_by_distance",
-                "nearest_neighbor_ids",
                 _REWARDS,
-                "step_rewards",
-                "num_runners",
+                "num_preys",
                 "distance_margin_for_reward",
-                "tag_reward_for_tagger",
-                "tag_penalty_for_runner",
-                "end_of_game_reward_for_runner",
+                "eating_reward_for_predator",
+                "eating_penalty_for_prey",
+                "end_of_game_penalty",
+                "end_of_game_reward",
                 "_done_",
                 "_timestep_",
                 ("n_agents", "meta"),
@@ -609,7 +571,7 @@ class Environment(CUDAEnvironmentContext):
             rew = self.compute_reward()
             done = {
                 "__all__": (self.timestep >= self.episode_length)
-                or (self.num_runners == 0)
+                or (self.num_preys == 0)
             }
             info = {}
 
