@@ -174,6 +174,9 @@ class Environment(CUDAEnvironmentContext):
             self.float_dtype
         )
 
+        # Copy preys dict for applying at reset
+        self.preys_at_reset = copy.deepcopy(self.runners)
+
     name = "SimulationEnvironment"
 
     def seed(self, seed=None):
@@ -524,7 +527,7 @@ class Environment(CUDAEnvironmentContext):
         self.edge_hit_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
 
         # Reinitialize some variables that may have changed during previous episode
-        self.preys = copy.deepcopy(self.runners_at_reset)
+        self.preys = copy.deepcopy(self.preys_at_reset)
         self.num_preys = len(self.runners)
 
         return self.generate_observation()
