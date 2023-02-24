@@ -296,7 +296,7 @@ def CudaTagContinuousComputeReward(
     loc_x_arr,
     loc_y_arr,
     kGridLength,
-    edge_hit_reward_penalty,
+    edge_hit_penalty,
     step_rewards_arr,
     num_runners_arr,
     agent_types_arr,
@@ -319,7 +319,7 @@ def CudaTagContinuousComputeReward(
 
         if still_in_the_game_arr[kEnvId, kThisAgentId]:
             # Add the edge hit penalty and the step rewards / penalties
-            rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty[
+            rewards_arr[kEnvId, kThisAgentId] += edge_hit_penalty[
                 kEnvId, kThisAgentId
             ]
             rewards_arr[kEnvId, kThisAgentId] += step_rewards_arr[kThisAgentId]
@@ -408,7 +408,7 @@ def NumbaTagContinuousStep(
     direction_arr,
     acceleration_arr,
     agent_types_arr,
-    edge_hit_reward_penalty,
+    edge_hit_penalty,
     kEdgeHitPenalty,
     kGridLength,
     acceleration_actions_arr,
@@ -511,9 +511,9 @@ def NumbaTagContinuousStep(
             elif loc_y_arr[kEnvId, kThisAgentId] > kGridLength:
                 loc_y_arr[kEnvId, kThisAgentId] = kGridLength
 
-            edge_hit_reward_penalty[kEnvId, kThisAgentId] = kEdgeHitPenalty
+            edge_hit_penalty[kEnvId, kThisAgentId] = kEdgeHitPenalty
         else:
-            edge_hit_reward_penalty[kEnvId, kThisAgentId] = 0.0
+            edge_hit_penalty[kEnvId, kThisAgentId] = 0.0
 
     numba_driver.syncthreads()
 
