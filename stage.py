@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 from gym import spaces
 from gym.utils import seeding
@@ -490,6 +491,43 @@ class Environment(CUDAEnvironmentContext):
         tensor_dict = DataFeed()
         return tensor_dict
 
+    def reset(self):
+        """
+        Env reset().
+        """
+        # Reset time to the beginning
+        self.timestep = 0
+
+        # Re-initialize the global state
+        self.global_state = {}
+        self.set_global_state(
+            key=_LOC_X, value=self.starting_location_x, t=self.timestep
+        )
+        self.set_global_state(
+            key=_LOC_Y, value=self.starting_location_y, t=self.timestep
+        )
+        self.set_global_state(key=_SP, value=self.starting_speeds, t=self.timestep)
+        self.set_global_state(key=_DIR, value=self.starting_directions, t=self.timestep)
+        self.set_global_state(
+            key=_ACC, value=self.starting_accelerations, t=self.timestep
+        )
+
+        # Array to keep track of the agents that are still in play
+        self.still_in_the_game = np.ones(self.num_agents, dtype=self.int_dtype)
+
+        # Initialize global state for "still_in_the_game" to all ones
+        self.global_state[_SIG] = np.ones(
+            (self.episode_length + 1, self.num_agents), dtype=self.int_dtype
+        )
+
+        # Penalty for hitting the edges
+        self.edge_hit_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
+
+        # Reinitialize some variables that may have changed during previous episode
+        self.preys = copy.deepcopy(self.runners_at_reset)
+        self.num_preys = len(self.runners)
+
+        return self.generate_observation()
 
     def step(self, actions=None):
         """
