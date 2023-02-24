@@ -184,7 +184,7 @@ class Environment(CUDAEnvironmentContext):
         # Copy preys dict for applying at reset
         self.preys_at_reset = copy.deepcopy(self.preys)
 
-    name = "SimulationEnvironment"
+    name = "Environment"
 
     def seed(self, seed=None):
         """
