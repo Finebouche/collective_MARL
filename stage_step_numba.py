@@ -47,7 +47,7 @@ def ComputeDistance(
                    int32,
                    int32),
                   device=True)
-def CudaTagContinuousGenerateObservation(
+def CudaEnvironmentGenerateObservation(
         loc_x_arr,
         loc_y_arr,
         speed_arr,
@@ -291,7 +291,7 @@ def CudaTagContinuousGenerateObservation(
                    int32,
                    int32),
                   device=True)
-def CudaTagContinuousComputeReward(
+def CudaEnvironmentComputeReward(
     rewards_arr,
     loc_x_arr,
     loc_y_arr,
@@ -401,7 +401,7 @@ def CudaTagContinuousComputeReward(
                    int32[::1],
                    int32,
                    int32))
-def NumbaTagContinuousStep(
+def NumbaEnvironmentStep(
     loc_x_arr,
     loc_y_arr,
     speed_arr,
@@ -521,7 +521,7 @@ def NumbaTagContinuousStep(
     # Generate observation           -
     # --------------------------------
 
-    CudaTagContinuousGenerateObservation(
+    CudaEnvironmentGenerateObservation(
         loc_x_arr,
         loc_y_arr,
         speed_arr,
@@ -547,7 +547,7 @@ def NumbaTagContinuousStep(
     # --------------------------------
     # Compute reward                 -
     # --------------------------------
-    CudaTagContinuousComputeReward(
+    CudaEnvironmentComputeReward(
         rewards_arr,
         loc_x_arr,
         loc_y_arr,
