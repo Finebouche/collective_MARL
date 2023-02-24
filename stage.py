@@ -279,6 +279,25 @@ class Environment(CUDAEnvironmentContext):
         self.set_global_state(key=_DIR, value=dir_curr_t, t=self.timestep)
         self.set_global_state(key=_ACC, value=acc_curr_t, t=self.timestep)
 
+    def compute_distance(self, agent1, agent2):
+        """
+        Note: 'compute_distance' is only used when running on CPU step() only.
+        When using the CUDA step function, this Python method (compute_distance)
+        is also part of the step() function!
+        """
+        return np.sqrt(
+            (
+                self.global_state[_LOC_X][self.timestep, agent1]
+                - self.global_state[_LOC_X][self.timestep, agent2]
+            )
+            ** 2
+            + (
+                self.global_state[_LOC_Y][self.timestep, agent1]
+                - self.global_state[_LOC_Y][self.timestep, agent2]
+            )
+            ** 2
+        ).astype(self.float_dtype)
+
     def generate_observation(self):
         """
         Generate and return the observations for every agent.
