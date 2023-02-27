@@ -255,18 +255,18 @@ class Environment(CUDAEnvironmentContext):
         # Crossing the edge
         has_crossed_edge = ~(
             (loc_x_curr_t >= 0)
-            & (loc_x_curr_t <= self.grid_length)
+            & (loc_x_curr_t <= self.stage_size)
             & (loc_y_curr_t >= 0)
-            & (loc_y_curr_t <= self.grid_length)
+            & (loc_y_curr_t <= self.stage_size)
         )
 
         # Clip x and y if agent has crossed edge
         clipped_loc_x_curr_t = self.float_dtype(
-            np.clip(loc_x_curr_t, 0.0, self.grid_length)
+            np.clip(loc_x_curr_t, 0.0, self.stage_size)
         )
 
         clipped_loc_y_curr_t = self.float_dtype(
-            np.clip(loc_y_curr_t, 0.0, self.grid_length)
+            np.clip(loc_y_curr_t, 0.0, self.stage_size)
         )
 
         # Penalize reward if agents hit the walls
@@ -538,7 +538,6 @@ class Environment(CUDAEnvironmentContext):
             # CUDA version of step()
             # This subsumes update_state(), generate_observation(),
             # and compute_reward()
-
             args = [
                 _LOC_X,
                 _LOC_Y,
@@ -546,23 +545,29 @@ class Environment(CUDAEnvironmentContext):
                 _DIR,
                 _ACC,
                 "agent_types",
-                "edge_hit_reward_penalty",
-                "edge_hit_penalty",
-                "grid_length",
+                "stage_size",
                 "acceleration_actions",
                 "turn_actions",
                 "max_speed",
+                "max_acceleration",
+                "min_acceleration",
+                "max_turn",
+                "min_turn",
                 "still_in_the_game",
                 "use_full_observation",
+                "max_seeing_angle",
+                "max_seeing_distance",
                 _OBSERVATIONS,
                 _ACTIONS,
                 _REWARDS,
                 "num_preys",
-                "distance_margin_for_reward",
+                "num_predators",
+                "edge_hit_penalty",
                 "eating_reward_for_predator",
                 "eating_penalty_for_prey",
                 "end_of_game_penalty",
                 "end_of_game_reward",
+                "distance_margin_for_reward",
                 "_done_",
                 "_timestep_",
                 ("n_agents", "meta"),
@@ -580,6 +585,8 @@ class Environment(CUDAEnvironmentContext):
                     self.cuda_function_manager.grid, self.cuda_function_manager.block
                 ](*self.cuda_step_function_feed(args))
             result = None  # do not return anything
+            A
+        # CPU version of step()
         else:
             assert isinstance(actions, dict)
             assert len(actions) == self.num_agents
