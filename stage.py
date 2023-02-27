@@ -585,7 +585,7 @@ class Environment(CUDAEnvironmentContext):
                     self.cuda_function_manager.grid, self.cuda_function_manager.block
                 ](*self.cuda_step_function_feed(args))
             result = None  # do not return anything
-            A
+
         # CPU version of step()
         else:
             assert isinstance(actions, dict)
