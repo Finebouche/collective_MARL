@@ -181,6 +181,13 @@ class CustomEnv(CUDAEnvironmentContext):
         self.distance_margin_for_reward = (eating_distance * self.stage_size).astype(
             self.float_dtype
         )
+        
+        # REWARDS
+        self.eating_reward_for_predator = eating_reward_for_predator
+        self.eating_penalty_for_prey = eating_penalty_for_prey
+        self.edge_hit_penalty = edge_hit_penalty
+        self.end_of_game_penalty = end_of_game_penalty
+        self.end_of_game_reward = end_of_game_reward
 
         # Copy preys dict for applying at reset
         self.preys_at_reset = copy.deepcopy(self.preys)
