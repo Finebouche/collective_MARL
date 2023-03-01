@@ -47,7 +47,7 @@ def ComputeDistance(
                    int32,
                    int32),
                   device=True)
-def CudaEnvironmentGenerateObservation(
+def CudaCustomEnvGenerateObservation(
         loc_x_arr,
         loc_y_arr,
         speed_arr,
@@ -244,7 +244,7 @@ def CudaEnvironmentGenerateObservation(
                    int32,
                    int32),
                   device=True)
-def CudaEnvironmentComputeReward(
+def CudaCustomEnvComputeReward(
     rewards_arr,
     loc_x_arr,
     loc_y_arr,
@@ -319,40 +319,8 @@ def CudaEnvironmentComputeReward(
             done_arr[kEnvId] = 1
 
 
-@numba_driver.jit((float32[:, ::1],
-                   float32[:, ::1],
-                   float32[:, ::1],
-                   float32[:, ::1],
-                   float32[:, ::1],
-                   int32[::1],
-                   float32[:, ::1],
-                   float32,
-                   float32,
-                   float32[::1],
-                   float32[::1],
-                   float32,
-                   int32,
-                   float32[::1],
-                   boolean,
-                   int32[:, ::1],
-                   boolean,
-                   float32[:, :, ::1],
-                   int32[:, :, ::1],
-                   float32[:, :, ::1],
-                   int32[:, :, ::1],
-                   int32[:, :, ::1],
-                   float32[:, ::1],
-                   float32[::1],
-                   int32[::1],
-                   float32,
-                   float32,
-                   float32,
-                   float32,
-                   int32[::1],
-                   int32[::1],
-                   int32,
-                   int32))
-def NumbaEnvironmentStep(
+@numba_driver.jit
+def NumbaCustomEnvStep(
     loc_x_arr,
     loc_y_arr,
     speed_arr,
@@ -459,7 +427,7 @@ def NumbaEnvironmentStep(
     # Generate observation           -
     # --------------------------------
 
-    CudaEnvironmentGenerateObservation(
+    CudaCustomEnvGenerateObservation(
         loc_x_arr,
         loc_y_arr,
         speed_arr,
@@ -481,7 +449,7 @@ def NumbaEnvironmentStep(
     # --------------------------------
     # Compute reward                 -
     # --------------------------------
-    CudaEnvironmentComputeReward(
+    CudaCustomEnvComputeReward(
         rewards_arr,
         loc_x_arr,
         loc_y_arr,

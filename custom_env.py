@@ -19,7 +19,7 @@ _SIG = "still_in_the_game"
 _DONE = "done"
 
 
-class Environment(CUDAEnvironmentContext):
+class CustomEnv(CUDAEnvironmentContext):
 
     def __init__(self,
                  num_preys=50,
@@ -46,6 +46,7 @@ class Environment(CUDAEnvironmentContext):
                  use_full_observation=True,
                  eating_distance=0.02,
                  seed=None,
+                 env_backend="cpu",
                  ):
         super().__init__()
 
@@ -183,8 +184,12 @@ class Environment(CUDAEnvironmentContext):
 
         # Copy preys dict for applying at reset
         self.preys_at_reset = copy.deepcopy(self.preys)
+        
+        # These will also be set via the env_wrapper
+        self.env_backend = env_backend
 
-    name = "Environment"
+
+    name = "CustomEnv"
 
     def seed(self, seed=None):
         """
@@ -574,16 +579,17 @@ class Environment(CUDAEnvironmentContext):
                 ("episode_length", "meta"),
             ]
 
-            if self.env_backend == "pycuda":
-                self.cuda_step(
-                    *self.cuda_step_function_feed(args),
-                    block=self.cuda_function_manager.block,
-                    grid=self.cuda_function_manager.grid,
+            # if self.env_backend == "pycuda":
+            #     self.cuda_step(
+            #         *self.cuda_step_function_feed(args),
+            #         block=self.cuda_function_manager.block,
+            #         grid=self.cuda_function_manager.grid,
+            #     )
+            if self.env_backend == "numba":
+                print("Hello this is earth")
+                self.cuda_step[self.cuda_function_manager.grid, self.cuda_function_manager.block](
+                    *self.cuda_step_function_feed(args)
                 )
-            elif self.env_backend == "numba":
-                self.cuda_step[
-                    self.cuda_function_manager.grid, self.cuda_function_manager.block
-                ](*self.cuda_step_function_feed(args))
             result = None  # do not return anything
 
         # CPU version of step()
