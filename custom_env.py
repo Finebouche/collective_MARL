@@ -579,12 +579,12 @@ class CustomEnv(CUDAEnvironmentContext):
                 ("episode_length", "meta"),
             ]
 
-            # if self.env_backend == "pycuda":
-            #     self.cuda_step(
-            #         *self.cuda_step_function_feed(args),
-            #         block=self.cuda_function_manager.block,
-            #         grid=self.cuda_function_manager.grid,
-            #     )
+            if self.env_backend == "pycuda":
+                self.cuda_step(
+                    *self.cuda_step_function_feed(args),
+                    block=self.cuda_function_manager.block,
+                    grid=self.cuda_function_manager.grid,
+                )
             if self.env_backend == "numba":
                 print("Hello this is earth")
                 self.cuda_step[self.cuda_function_manager.grid, self.cuda_function_manager.block](

@@ -60,6 +60,9 @@ def CudaCustomEnvGenerateObservation(
         still_in_the_game_arr,
         kUseFullObservation,
         obs_arr,
+        neighbor_distances_arr,
+        neighbor_ids_sorted_by_distance_arr,
+        nearest_neighbor_ids,        
         env_timestep_arr,
         kNumAgents,
         kEpisodeLength,
@@ -230,12 +233,10 @@ def CudaCustomEnvGenerateObservation(
                    float32[:, ::1],
                    float32[::1],
                    int32[::1],
-                   int32[::1],
                    float32,
                    float32,
                    float32,
                    float32,
-                   boolean,
                    int32[:, ::1],
                    int32[::1],
                    int32[::1],
@@ -249,8 +250,8 @@ def CudaCustomEnvComputeReward(
     loc_x_arr,
     loc_y_arr,
     kGridLength,
-    edge_hit_penalty,
-    step_rewards_arr,
+    edge_hit_penalty_arr,
+    num_preys_arr,
     agent_types_arr,
     kEatingRewardForPredator,
     kEatingPenaltyForPreys,
@@ -270,10 +271,9 @@ def CudaCustomEnvComputeReward(
 
         if still_in_the_game_arr[kEnvId, kThisAgentId]:
             # Add the edge hit penalty and the step rewards / penalties
-            rewards_arr[kEnvId, kThisAgentId] += edge_hit_penalty[
+            rewards_arr[kEnvId, kThisAgentId] += edge_hit_penalty_arr[
                 kEnvId, kThisAgentId
             ]
-            rewards_arr[kEnvId, kThisAgentId] += step_rewards_arr[kThisAgentId]
 
         # Ensure that all the agents rewards are initialized before we proceed
         # The rewards are only set by the runners, so this pause is necessary
@@ -299,23 +299,23 @@ def CudaCustomEnvComputeReward(
                         min_dist = dist
                         nearest_tagger_id = other_agent_id
 
-            if min_dist < kDistanceMarginForReward:
+            if min_dist < 1: #TODO: need to change that 1
                 # The runner is tagged
-                rewards_arr[kEnvId, kThisAgentId] += kTagPenaltyForRunner
-                rewards_arr[kEnvId, nearest_tagger_id] += kTagRewardForTagger
+                rewards_arr[kEnvId, kThisAgentId] += kEatingPenaltyForPreys
+                rewards_arr[kEnvId, nearest_tagger_id] += kEatingRewardForPredator
 
-                if kRunnerExitsGameAfterTagged:
-                    still_in_the_game_arr[kEnvId, kThisAgentId] = 0
-                    num_runners_arr[kEnvId] -= 1
+                # if kRunnerExitsGameAfterTagged: # TODO : Use to be kRunnerExitsGameAfterTagged but always true
+                still_in_the_game_arr[kEnvId, kThisAgentId] = 0
+                num_preys_arr[kEnvId] -= 1
 
             # Add end of game reward for runners at the end of the episode
             if env_timestep_arr[kEnvId] == kEpisodeLength:
-                rewards_arr[kEnvId, kThisAgentId] += kEndOfGameRewardForRunner
+                rewards_arr[kEnvId, kThisAgentId] += kEndOfGameRewardForPrey
 
     numba_driver.syncthreads()
 
     if kThisAgentId == 0:
-        if env_timestep_arr[kEnvId] == kEpisodeLength or num_runners_arr[kEnvId] == 0:
+        if env_timestep_arr[kEnvId] == kEpisodeLength or num_preys_arr[kEnvId] == 0:
             done_arr[kEnvId] = 1
 
 
