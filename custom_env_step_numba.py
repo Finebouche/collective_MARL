@@ -34,13 +34,9 @@ def ComputeDistance(
                    int32[::1],
                    float32,
                    float32,
-                   int32,
                    int32[:, ::1],
                    boolean,
                    float32[:, :, ::1],
-                   float32[:, :, ::1],
-                   int32[:, :, ::1],
-                   int32[:, :, ::1],
                    int32[::1],
                    int32,
                    int32,
@@ -56,13 +52,9 @@ def CudaCustomEnvGenerateObservation(
         agent_types_arr,
         kGridLength,
         kMaxSpeed,
-        kNumOtherAgentsObserved,
         still_in_the_game_arr,
         kUseFullObservation,
-        obs_arr,
-        neighbor_distances_arr,
-        neighbor_ids_sorted_by_distance_arr,
-        nearest_neighbor_ids,        
+        obs_arr,  
         env_timestep_arr,
         kNumAgents,
         kEpisodeLength,
@@ -140,98 +132,26 @@ def CudaCustomEnvGenerateObservation(
                 )
         else:
             # Initialize obs to all zeros
-            for idx in range(kNumOtherAgentsObserved):
-                obs_arr[kEnvId, kThisAgentId, 0 * kNumOtherAgentsObserved + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 1 * kNumOtherAgentsObserved + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 2 * kNumOtherAgentsObserved + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 3 * kNumOtherAgentsObserved + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 4 * kNumOtherAgentsObserved + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 5 * kNumOtherAgentsObserved + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 6 * kNumOtherAgentsObserved + idx] = 0.0
+            for idx in range(kNumAgents):
+                obs_arr[kEnvId, kThisAgentId, 0 * kNumAgents + idx] = 0.0
+                obs_arr[kEnvId, kThisAgentId, 1 * kNumAgents + idx] = 0.0
+                obs_arr[kEnvId, kThisAgentId, 2 * kNumAgents + idx] = 0.0
+                obs_arr[kEnvId, kThisAgentId, 3 * kNumAgents + idx] = 0.0
+                obs_arr[kEnvId, kThisAgentId, 4 * kNumAgents + idx] = 0.0
+                obs_arr[kEnvId, kThisAgentId, 5 * kNumAgents + idx] = 0.0
+                obs_arr[kEnvId, kThisAgentId, 6 * kNumAgents + idx] = 0.0
 
-            obs_arr[kEnvId, kThisAgentId, num_features * kNumOtherAgentsObserved] = 0.0
+            obs_arr[kEnvId, kThisAgentId, num_features * kNumAgents] = 0.0
 
-            # Update obs for agents still in the game
-            if still_in_the_game_arr[kEnvId, kThisAgentId]:
-
-                # Initialize neighbor_ids_sorted_by_distance_arr
-                # other agents that are still in the same
-                num_valid_other_agents = 0
-                for other_agent_id in range(kNumAgents):
-                    if (
-                        not other_agent_id == kThisAgentId
-                        and still_in_the_game_arr[kEnvId, other_agent_id]
-                    ):
-                        neighbor_ids_sorted_by_distance_arr[
-                            kEnvId, kThisAgentId, num_valid_other_agents
-                        ] = other_agent_id
-                        num_valid_other_agents += 1
-
-                # First, find distance to all the valid agents
-                for idx in range(num_valid_other_agents):
-                    neighbor_distances_arr[kEnvId, kThisAgentId, idx] = ComputeDistance(
-                        loc_x_arr,
-                        loc_y_arr,
-                        kThisAgentId,
-                        neighbor_ids_sorted_by_distance_arr[kEnvId, kThisAgentId, idx],
-                        kEnvId,
-                        kNumAgents,
-                    )
-
-                # Find the nearest neighbor agent indices
-                for i in range(min(num_valid_other_agents, kNumOtherAgentsObserved)):
-                    for j in range(i + 1, num_valid_other_agents):
-
-                        if neighbor_distances_arr[kEnvId, kThisAgentId, j] < neighbor_distances_arr[kEnvId, kThisAgentId, i]:
-                            tmp1 = neighbor_distances_arr[kEnvId, kThisAgentId, i]
-                            neighbor_distances_arr[kEnvId, kThisAgentId, i] = neighbor_distances_arr[kEnvId, kThisAgentId, j]
-                            neighbor_distances_arr[kEnvId, kThisAgentId, j] = tmp1
-
-                            tmp2 = neighbor_ids_sorted_by_distance_arr[kEnvId, kThisAgentId, i]
-                            neighbor_ids_sorted_by_distance_arr[kEnvId, kThisAgentId, i] = neighbor_ids_sorted_by_distance_arr[kEnvId, kThisAgentId, j]
-                            neighbor_ids_sorted_by_distance_arr[kEnvId, kThisAgentId, j] = tmp2
-
-                # Save nearest neighbor ids
-                for idx in range(min(num_valid_other_agents, kNumOtherAgentsObserved)):
-                    nearest_neighbor_ids[kEnvId, kThisAgentId, idx] = neighbor_ids_sorted_by_distance_arr[kEnvId, kThisAgentId, idx]
-
-                # Update observation
-                for idx in range(min(num_valid_other_agents, kNumOtherAgentsObserved)):
-                    kOtherAgentId = nearest_neighbor_ids[kEnvId, kThisAgentId, idx]
-
-                    obs_arr[kEnvId, kThisAgentId, 0 * kNumOtherAgentsObserved + idx] = float(
-                        loc_x_arr[kEnvId, kOtherAgentId]
-                        - loc_x_arr[kEnvId, kThisAgentId]
-                    ) / (math.sqrt(2.0) * kGridLength)
-                    obs_arr[kEnvId, kThisAgentId, 1 * kNumOtherAgentsObserved + idx] = float(
-                        loc_y_arr[kEnvId, kOtherAgentId]
-                        - loc_y_arr[kEnvId, kThisAgentId]
-                    ) / (math.sqrt(2.0) * kGridLength)
-                    obs_arr[kEnvId, kThisAgentId, 2 * kNumOtherAgentsObserved + idx] = float(
-                        speed_arr[kEnvId, kOtherAgentId]
-                        - speed_arr[kEnvId, kThisAgentId]
-                    ) / (kMaxSpeed + kEpsilon)
-                    obs_arr[kEnvId, kThisAgentId, 3 * kNumOtherAgentsObserved + idx] = float(
-                        acceleration_arr[kEnvId, kOtherAgentId]
-                        - acceleration_arr[kEnvId, kThisAgentId]
-                    ) / (kMaxSpeed + kEpsilon)
-                    obs_arr[kEnvId, kThisAgentId, 4 * kNumOtherAgentsObserved + idx] = float(
-                            direction_arr[kEnvId, kOtherAgentId]
-                            - direction_arr[kEnvId, kThisAgentId]
-                        ) / kTwoPi
-                    obs_arr[kEnvId, kThisAgentId, 5 * kNumOtherAgentsObserved + idx] = agent_types_arr[kOtherAgentId]
-                    obs_arr[kEnvId, kThisAgentId, 6 * kNumOtherAgentsObserved + idx] = still_in_the_game_arr[kEnvId, kOtherAgentId]
-
-                obs_arr[kEnvId, kThisAgentId, num_features * kNumOtherAgentsObserved] = (float(env_timestep_arr[kEnvId]) / kEpisodeLength)
 
 
 # Device helper function to compute rewards
-@numba_driver.jit((float32[:, ::1],
+@numba_driver.jit((int32[:, ::1],
                    float32[:, ::1],
                    float32[:, ::1],
                    float32,
                    float32[:, ::1],
-                   float32[::1],
+                   int32[::1],
                    int32[::1],
                    float32,
                    float32,
@@ -267,7 +187,7 @@ def CudaCustomEnvComputeReward(
 ):
     if kThisAgentId < kNumAgents:
         # Initialize rewards
-        rewards_arr[kEnvId, kThisAgentId] = 0.0
+        rewards_arr[kEnvId, kThisAgentId] = 0
 
         if still_in_the_game_arr[kEnvId, kThisAgentId]:
             # Add the edge hit penalty and the step rewards / penalties
@@ -319,7 +239,39 @@ def CudaCustomEnvComputeReward(
             done_arr[kEnvId] = 1
 
 
-@numba_driver.jit
+@numba_driver.jit((float32[:, ::1],
+                   float32[:, ::1],
+                   float32[:, ::1],
+                   float32[:, ::1],
+                   float32[:, ::1],
+                   int32[::1],
+                   float32,
+                   float32[::1],
+                   float32[::1],
+                   float32,
+                   float32,
+                   float32,
+                   float32,
+                   float32,
+                   int32[:, ::1],
+                   boolean,
+                   float32,
+                   float32,
+                   float32[:, :, ::1],
+                   int32[:, :, ::1],
+                   float32[:, ::1],
+                   int32[:, ::1],
+                   int32[::1],
+                   int32[::1],
+                   float32,
+                   float32,
+                   float32,
+                   float32,
+                   float32,
+                   int32[::1],
+                   int32[::1],
+                   int32,
+                   int32))
 def NumbaCustomEnvStep(
     loc_x_arr,
     loc_y_arr,
@@ -439,13 +391,14 @@ def NumbaCustomEnvStep(
         kMaxSpeed,
         still_in_the_game_arr,
         kUseFullObservation,
-        obs_arr,
+        obs_arr,  
         env_timestep_arr,
         kNumAgents,
         kEpisodeLength,
         kEnvId,
         kThisAgentId,
     )
+
 
     # --------------------------------
     # Compute reward                 -

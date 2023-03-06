@@ -483,6 +483,10 @@ class CustomEnv(CUDAEnvironmentContext):
         data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
         data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
         data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
+        
+                #_OBSERVATIONS,
+                #_ACTIONS,
+                #_REWARDS,
         data_dict.add_data(
             name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
         )
