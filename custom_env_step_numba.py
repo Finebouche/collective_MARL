@@ -355,6 +355,7 @@ def NumbaCustomEnvStep(
     kNumAgents,
     kEpisodeLength,
 ):
+    print("Numba step function call starting")
     kEnvId = numba_driver.blockIdx.x
     kThisAgentId = numba_driver.threadIdx.x
     kNumActions = 2

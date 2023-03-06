@@ -462,22 +462,34 @@ class CustomEnv(CUDAEnvironmentContext):
                 data=self.global_state[feature][0],
                 save_copy_and_apply_at_reset=True,
             )
+
         data_dict.add_data(
             name="agent_types",
             data=[self.agent_type[agent_id] for agent_id in range(self.num_agents)],
         )
+        data_dict.add_data(name="stage_size", data=self.stage_size)
+        data_dict.add_data(name="acceleration_actions", data=self.acceleration_actions)
+        data_dict.add_data(name="turn_actions", data=self.turn_actions)
+        data_dict.add_data(name="max_speed", data=self.max_speed)
+        data_dict.add_data(name="max_acceleration", data=self.max_acceleration)
+        data_dict.add_data(name="min_acceleration", data=self.min_acceleration)
+        data_dict.add_data(name="max_turn", data=self.max_turn)
+        data_dict.add_data(name="min_turn", data=self.min_turn)
+        data_dict.add_data(
+            name="still_in_the_game",
+            data=self.still_in_the_game,
+            save_copy_and_apply_at_reset=True,
+        )
+        data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
+        data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
+        data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
         data_dict.add_data(
             name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
         )
-        data_dict.add_data(name="stage_size", data=self.stage_size)
-        data_dict.add_data(name="edge_hit_penalty", data=self.edge_hit_penalty)
-        data_dict.add_data(name="max_speed", data=self.max_speed)
-        data_dict.add_data(name="acceleration_actions", data=self.acceleration_actions)
-        data_dict.add_data(name="turn_actions", data=self.turn_actions)
-        data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
         data_dict.add_data(
-            name="distance_margin_for_reward", data=self.distance_margin_for_reward
+            name="num_predators", data=self.num_predators, save_copy_and_apply_at_reset=True
         )
+        data_dict.add_data(name="edge_hit_penalty", data=self.edge_hit_penalty)
         data_dict.add_data(
             name="eating_reward_for_predator", data=self.eating_reward_for_predator
         )
@@ -493,10 +505,9 @@ class CustomEnv(CUDAEnvironmentContext):
             data=self.end_of_game_reward,
         )
         data_dict.add_data(
-            name="still_in_the_game",
-            data=self.still_in_the_game,
-            save_copy_and_apply_at_reset=True,
+            name="distance_margin_for_reward", data=self.distance_margin_for_reward
         )
+
         return data_dict
 
     def get_tensor_dictionary(self):
@@ -593,7 +604,7 @@ class CustomEnv(CUDAEnvironmentContext):
                     grid=self.cuda_function_manager.grid,
                 )
             if self.env_backend == "numba":
-                print("Hello this is earth")
+                print("Try calling numba step function")
                 self.cuda_step[self.cuda_function_manager.grid, self.cuda_function_manager.block](
                     *self.cuda_step_function_feed(args)
                 )
