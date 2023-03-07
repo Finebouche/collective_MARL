@@ -451,72 +451,6 @@ class CustomEnv(CUDAEnvironmentContext):
 
         return rew
 
-    def get_data_dictionary(self):
-        """
-        Create a dictionary of data to push to the device
-        """
-        data_dict = DataFeed()
-        for feature in [_LOC_X, _LOC_Y, _SP, _DIR, _ACC]:
-            data_dict.add_data(
-                name=feature,
-                data=self.global_state[feature][0],
-                save_copy_and_apply_at_reset=True,
-            )
-
-        data_dict.add_data(
-            name="agent_types",
-            data=[self.agent_type[agent_id] for agent_id in range(self.num_agents)],
-        )
-        data_dict.add_data(name="stage_size", data=self.stage_size)
-        data_dict.add_data(name="acceleration_actions", data=self.acceleration_actions)
-        data_dict.add_data(name="turn_actions", data=self.turn_actions)
-        data_dict.add_data(name="max_speed", data=self.max_speed)
-        data_dict.add_data(name="max_acceleration", data=self.max_acceleration)
-        data_dict.add_data(name="min_acceleration", data=self.min_acceleration)
-        data_dict.add_data(name="max_turn", data=self.max_turn)
-        data_dict.add_data(name="min_turn", data=self.min_turn)
-        data_dict.add_data(
-            name="still_in_the_game",
-            data=self.still_in_the_game,
-            save_copy_and_apply_at_reset=True,
-        )
-        data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
-        data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
-        data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
-        
-                #_OBSERVATIONS,
-                #_ACTIONS,
-                #_REWARDS,
-        data_dict.add_data(
-            name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
-        )
-        data_dict.add_data(
-            name="num_predators", data=self.num_predators, save_copy_and_apply_at_reset=True
-        )
-        data_dict.add_data(name="edge_hit_penalty", data=self.edge_hit_penalty)
-        data_dict.add_data(
-            name="eating_reward_for_predator", data=self.eating_reward_for_predator
-        )
-        data_dict.add_data(
-            name="eating_penalty_for_prey", data=self.eating_penalty_for_prey
-        )
-        data_dict.add_data(
-            name="end_of_game_penalty",
-            data=self.end_of_game_penalty,
-        )
-        data_dict.add_data(
-            name="end_of_game_reward",
-            data=self.end_of_game_reward,
-        )
-        data_dict.add_data(
-            name="distance_margin_for_reward", data=self.distance_margin_for_reward
-        )
-
-        return data_dict
-
-    def get_tensor_dictionary(self):
-        tensor_dict = DataFeed()
-        return tensor_dict
 
     def reset(self):
         """
@@ -561,92 +495,167 @@ class CustomEnv(CUDAEnvironmentContext):
         Env step() - The GPU version calls the corresponding CUDA kernels
         """
         self.timestep += 1
-        if not self.env_backend == "cpu":
-            # CUDA version of step()
-            # This subsumes update_state(), generate_observation(),
-            # and compute_reward()
-            args = [
-                _LOC_X,
-                _LOC_Y,
-                _SP,
-                _DIR,
-                _ACC,
-                "agent_types",
-                "stage_size",
-                "acceleration_actions",
-                "turn_actions",
-                "max_speed",
-                "max_acceleration",
-                "min_acceleration",
-                "max_turn",
-                "min_turn",
-                "still_in_the_game",
-                "use_full_observation",
-                "max_seeing_angle",
-                "max_seeing_distance",
-                _OBSERVATIONS,
-                _ACTIONS,
-                _REWARDS,
-                "num_preys",
-                "num_predators",
-                "edge_hit_penalty",
-                "eating_reward_for_predator",
-                "eating_penalty_for_prey",
-                "end_of_game_penalty",
-                "end_of_game_reward",
-                "distance_margin_for_reward",
-                "_done_",
-                "_timestep_",
-                ("n_agents", "meta"),
-                ("episode_length", "meta"),
-            ]
 
-            if self.env_backend == "pycuda":
-                self.cuda_step(
-                    *self.cuda_step_function_feed(args),
-                    block=self.cuda_function_manager.block,
-                    grid=self.cuda_function_manager.grid,
-                )
-            if self.env_backend == "numba":
-                print("Try calling numba step function")
-                self.cuda_step[self.cuda_function_manager.grid, self.cuda_function_manager.block](
-                    *self.cuda_step_function_feed(args)
-                )
-            result = None  # do not return anything
+        assert isinstance(actions, dict)
+        assert len(actions) == self.num_agents
 
-        # CPU version of step()
-        else:
-            assert isinstance(actions, dict)
-            assert len(actions) == self.num_agents
+        acceleration_action_ids = [
+            actions[agent_id][0] for agent_id in range(self.num_agents)
+        ]
+        turn_action_ids = [
+            actions[agent_id][1] for agent_id in range(self.num_agents)
+        ]
 
-            acceleration_action_ids = [
-                actions[agent_id][0] for agent_id in range(self.num_agents)
-            ]
-            turn_action_ids = [
-                actions[agent_id][1] for agent_id in range(self.num_agents)
-            ]
+        assert all(
+            0 <= acc <= self.num_acceleration_levels
+            for acc in acceleration_action_ids
+        )
+        assert all(0 <= turn <= self.num_turn_levels for turn in turn_action_ids)
 
-            assert all(
-                0 <= acc <= self.num_acceleration_levels
-                for acc in acceleration_action_ids
+        delta_accelerations = self.acceleration_actions[acceleration_action_ids]
+        delta_turns = self.turn_actions[turn_action_ids]
+
+        # Update state and generate observation
+        self.update_state(delta_accelerations, delta_turns)
+        if self.env_backend == "cpu":
+            obs = self.generate_observation()
+
+        # Compute rewards and done
+        rew = self.compute_reward()
+        done = {
+            "__all__": (self.timestep >= self.episode_length)
+                       or (self.num_preys == 0)
+        }
+        info = {}
+
+        return  obs, rew, done, info
+
+class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
+
+
+    def get_data_dictionary(self):
+        """
+        Create a dictionary of data to push to the device
+        """
+        data_dict = DataFeed()
+        for feature in [_LOC_X, _LOC_Y, _SP, _DIR, _ACC]:
+            data_dict.add_data(
+                name=feature,
+                data=self.global_state[feature][0],
+                save_copy_and_apply_at_reset=True,
             )
-            assert all(0 <= turn <= self.num_turn_levels for turn in turn_action_ids)
 
-            delta_accelerations = self.acceleration_actions[acceleration_action_ids]
-            delta_turns = self.turn_actions[turn_action_ids]
+        data_dict.add_data(
+            name="agent_types",
+            data=[self.agent_type[agent_id] for agent_id in range(self.num_agents)],
+        )
+        data_dict.add_data_list(
+            [
+                ("stage_size", self.stage_size),
+                ("acceleration_actions", self.acceleration_actions),
+                ("turn_actions", self.turn_actions),
+                ("max_speed", self.max_speed),
+                ("max_acceleration", self.max_acceleration),
+                ("min_acceleration", self.min_acceleration),
+                ("max_turn", self.max_turn),
+                ("min_turn", self.min_turn),
+            ]
+        )
+        data_dict.add_data(
+            name="still_in_the_game",
+            data=self.still_in_the_game,
+            save_copy_and_apply_at_reset=True,
+        )
+        data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
+        data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
+        data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
+        
+                #_OBSERVATIONS,
+                #_ACTIONS,
+                #_REWARDS,
+        data_dict.add_data(
+            name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
+        )
+        data_dict.add_data(
+            name="num_predators", data=self.num_predators, save_copy_and_apply_at_reset=True
+        )
+        data_dict.add_data(name="edge_hit_penalty", data=self.edge_hit_penalty)
+        data_dict.add_data(
+            name="eating_reward_for_predator", data=self.eating_reward_for_predator
+        )
+        data_dict.add_data(
+            name="eating_penalty_for_prey", data=self.eating_penalty_for_prey
+        )
+        data_dict.add_data(
+            name="end_of_game_penalty",
+            data=self.end_of_game_penalty,
+        )
+        data_dict.add_data(
+            name="end_of_game_reward",
+            data=self.end_of_game_reward,
+        )
+        data_dict.add_data(
+            name="distance_margin_for_reward", data=self.distance_margin_for_reward
+        )
 
-            # Update state and generate observation
-            self.update_state(delta_accelerations, delta_turns)
-            if self.env_backend == "cpu":
-                obs = self.generate_observation()
+        return data_dict
 
-            # Compute rewards and done
-            rew = self.compute_reward()
-            done = {
-                "__all__": (self.timestep >= self.episode_length)
-                           or (self.num_preys == 0)
-            }
-            info = {}
+    def get_tensor_dictionary(self):
+        tensor_dict = DataFeed()
+        return tensor_dict
+    
 
-            result = obs, rew, done, info
-        return result
+    def step(self, actions=None):
+        """
+        Env step() - The GPU version calls the corresponding CUDA kernels
+        """
+        self.timestep += 1
+        # CUDA version of step()
+        # This subsumes update_state(), generate_observation(),
+        # and compute_reward()
+        args = [
+            _LOC_X,
+            _LOC_Y,
+            _SP,
+            _DIR,
+            _ACC,
+            "agent_types",
+            "stage_size",
+            "acceleration_actions",
+            "turn_actions",
+            "max_speed",
+            "max_acceleration",
+            "min_acceleration",
+            "max_turn",
+            "min_turn",
+            "still_in_the_game",
+            "use_full_observation",
+            "max_seeing_angle",
+            "max_seeing_distance",
+            _OBSERVATIONS,
+            _ACTIONS,
+            _REWARDS,
+            "num_preys",
+            "num_predators",
+            "edge_hit_penalty",
+            "eating_reward_for_predator",
+            "eating_penalty_for_prey",
+            "end_of_game_penalty",
+            "end_of_game_reward",
+            "distance_margin_for_reward",
+            "_done_",
+            "_timestep_",
+            ("n_agents", "meta"),
+            ("episode_length", "meta"),
+        ]
+
+
+        if self.env_backend == "numba":
+            grid=self.cuda_function_manager.grid
+            block=self.cuda_function_manager.block
+
+            self.cuda_step[grid, block](
+                *self.cuda_step_function_feed(args)
+            )
+        else:
+            raise Exception("CUDACustomEnv expects env_backend = 'numba' ")
