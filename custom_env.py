@@ -492,7 +492,7 @@ class CustomEnv(CUDAEnvironmentContext):
 
     def step(self, actions=None):
         """
-        Env step() - The GPU version calls the corresponding CUDA kernels
+        Env step() - The CPU version
         """
         self.timestep += 1
 
@@ -530,8 +530,14 @@ class CustomEnv(CUDAEnvironmentContext):
 
         return  obs, rew, done, info
 
+    
 class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
 
+   """
+    CUDA version of the CustomEnv environment.
+    Note: this class subclasses the Python environment class CustomEnv,
+    and also the  CUDAEnvironmentContext
+    """
 
     def get_data_dictionary(self):
         """
