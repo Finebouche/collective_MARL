@@ -517,8 +517,7 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # Update state and generate observation
         self.update_state(delta_accelerations, delta_turns)
-        if self.env_backend == "cpu":
-            obs = self.generate_observation()
+        obs = self.generate_observation()
 
         # Compute rewards and done
         rew = self.compute_reward()
@@ -532,13 +531,12 @@ class CustomEnv(CUDAEnvironmentContext):
 
     
 class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
-
-   """
+    """
     CUDA version of the CustomEnv environment.
     Note: this class subclasses the Python environment class CustomEnv,
     and also the  CUDAEnvironmentContext
     """
-
+    
     def get_data_dictionary(self):
         """
         Create a dictionary of data to push to the device
