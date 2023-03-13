@@ -46,7 +46,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  use_full_observation=True,
                  eating_distance=0.02,
                  seed=None,
-                 env_backend="cpu",
+                 env_backend="numba",
                  ):
         super().__init__()
 

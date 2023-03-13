@@ -1,7 +1,7 @@
 import math
 
 import numba.cuda as numba_driver
-from numba import float32, int32, boolean
+from numba import float32, int32, boolean, types
 
 kTwoPi = 6.283185308
 kEpsilon = 1.0e-10
@@ -65,12 +65,11 @@ def CudaCustomEnvGenerateObservation(
     num_features = 7
 
     if kThisAgentId < kNumAgents:
-        if kUseFullObservation:
-            # create the array of other agents ids
-            other_agents_ids = [i for i in range(kNumAgents) if i != kThisAgentId]
+        index = 0
 
-            # Initialize obs of other agents to 0 physics variable and to agent type and still in the game
-            for index, other_agent_id in enumerate(other_agents_ids):
+        # Initialize obs of other agents to 0 physics variable and to agent type and still in the game
+        for other_agent_id in range(kNumAgents):
+            if not other_agent_id == kThisAgentId:
                 obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = 0.0 # futur position of loc_x
                 obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = 0.0
                 obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = 0.0
@@ -78,13 +77,16 @@ def CudaCustomEnvGenerateObservation(
                 obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = 0.0
                 obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = agent_types_arr[other_agent_id]
                 obs_arr[kEnvId, kThisAgentId, 6 * (kNumAgents - 1) + index] = still_in_the_game_arr[kEnvId, other_agent_id]
+                index += 1
 
-            obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = 0.0
+        obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = 0.0
 
-            # Update obs for agents still in the game
-            if still_in_the_game_arr[kEnvId, kThisAgentId]:
-                # Update obs of other agents
-                for index, other_agent_id in enumerate(other_agents_ids):
+        # Update obs for agents still in the game
+        if still_in_the_game_arr[kEnvId, kThisAgentId]:
+            index = 0
+            # Update obs of other agents
+            for other_agent_id in range(kNumAgents):
+                if not other_agent_id == kThisAgentId:
                     # update relative normalized pos_x of the other agent
                     obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
                         loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
@@ -105,23 +107,12 @@ def CudaCustomEnvGenerateObservation(
                     obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = float(
                         direction_arr[kEnvId, other_agent_id] - direction_arr[kEnvId, kThisAgentId]
                     ) / kTwoPi
+                    index += 1
 
-                # add the time remaining in the episode
-                obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
-                        float(env_timestep_arr[kEnvId]) / kEpisodeLength
-                )
-        else:
-            # Set all obs to zeros if the agent is not in the game
-            for idx in range(kNumAgents):
-                obs_arr[kEnvId, kThisAgentId, 0 * kNumAgents + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 1 * kNumAgents + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 2 * kNumAgents + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 3 * kNumAgents + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 4 * kNumAgents + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 5 * kNumAgents + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 6 * kNumAgents + idx] = 0.0
-
-            obs_arr[kEnvId, kThisAgentId, num_features * kNumAgents] = 0.0
+            # add the time remaining in the episode
+            obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
+                    float(env_timestep_arr[kEnvId]) / kEpisodeLength
+            )
 
 
 # Device helper function to compute rewards
