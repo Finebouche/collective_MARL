@@ -181,7 +181,7 @@ class CustomEnv(CUDAEnvironmentContext):
         self.distance_margin_for_reward = (eating_distance * self.stage_size).astype(
             self.float_dtype
         )
-        
+
         # REWARDS
         self.eating_reward_for_predator = eating_reward_for_predator
         self.eating_penalty_for_prey = eating_penalty_for_prey
@@ -191,10 +191,9 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # Copy preys dict for applying at reset
         self.preys_at_reset = copy.deepcopy(self.preys)
-        
+
         # These will also be set via the env_wrapper
         self.env_backend = env_backend
-
 
     name = "CustomEnv"
 
@@ -244,7 +243,7 @@ class CustomEnv(CUDAEnvironmentContext):
         # Update direction and acceleration
         # Do not update location if agent is out of the game !
         dir_curr_t = (
-            (dir_prev_t + delta_turns) % (2 * np.pi) * self.still_in_the_game
+                (dir_prev_t + delta_turns) % (2 * np.pi) * self.still_in_the_game
         ).astype(self.float_dtype)
 
         acc_curr_t = acc_prev_t + delta_accelerations
@@ -266,10 +265,10 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # Crossing the edge
         has_crossed_edge = ~(
-            (loc_x_curr_t >= 0)
-            & (loc_x_curr_t <= self.stage_size)
-            & (loc_y_curr_t >= 0)
-            & (loc_y_curr_t <= self.stage_size)
+                (loc_x_curr_t >= 0)
+                & (loc_x_curr_t <= self.stage_size)
+                & (loc_y_curr_t >= 0)
+                & (loc_y_curr_t <= self.stage_size)
         )
 
         # Clip x and y if agent has crossed edge
@@ -299,13 +298,13 @@ class CustomEnv(CUDAEnvironmentContext):
         """
         return np.sqrt(
             (
-                self.global_state[_LOC_X][self.timestep, agent1]
-                - self.global_state[_LOC_X][self.timestep, agent2]
+                    self.global_state[_LOC_X][self.timestep, agent1]
+                    - self.global_state[_LOC_X][self.timestep, agent2]
             )
             ** 2
             + (
-                self.global_state[_LOC_Y][self.timestep, agent1]
-                - self.global_state[_LOC_Y][self.timestep, agent2]
+                    self.global_state[_LOC_Y][self.timestep, agent1]
+                    - self.global_state[_LOC_Y][self.timestep, agent2]
             )
             ** 2
         ).astype(self.float_dtype)
@@ -315,7 +314,6 @@ class CustomEnv(CUDAEnvironmentContext):
         Generate and return the observations for every agent.
         """
         obs = {}
-
 
         normalized_global_obs = None
         # Normalize global states
@@ -348,28 +346,29 @@ class CustomEnv(CUDAEnvironmentContext):
         # Time to indicate that the agent is still in the game
         time = np.array([float(self.timestep) / self.episode_length])
 
-
         for agent_id in range(self.num_agents):
             # Set obs for agents still in the game
             # obs = [global_obs, agent_types, still_in_the_game, is_visible, time]
             if self.use_full_observation:
                 is_visible = np.ones_like(self.num_agents)
-            else :
-                is_visible = np.array([self.compute_distance(agent_id, observed_agent_id) < self.max_seeing_distance for observed_agent_id in range(self.num_agents)])
+            else:
+                is_visible = np.array([self.compute_distance(agent_id, observed_agent_id) < self.max_seeing_distance for observed_agent_id in
+                                       range(self.num_agents)])
 
             if self.still_in_the_game[agent_id] and self.use_full_observation:
-                    obs[agent_id] = np.concatenate(
-                        [
-                            np.vstack((
-                                normalized_global_obs - normalized_global_obs[:, agent_id].reshape(-1, 1),
-                                agent_types,
-                                self.still_in_the_game,
-                                is_visible
-                            ))[:,[idx for idx in range(self.num_agents) if idx != agent_id],].reshape(-1), # filter out the obs for the current agent
-                            time,
-                        ]
-                    )
-            else :
+                obs[agent_id] = np.concatenate(
+                    [
+                        np.vstack((
+                            normalized_global_obs - normalized_global_obs[:, agent_id].reshape(-1, 1),
+                            agent_types,
+                            self.still_in_the_game,
+                            is_visible
+                        ))[:, [idx for idx in range(self.num_agents) if idx != agent_id], ].reshape(-1),
+                        # filter out the obs for the current agent
+                        time,
+                    ]
+                )
+            else:
                 # Set to 0
                 # obs = [global_obs, agent_types, still_in_the_game, 0]
                 obs[agent_id] = np.concatenate(
@@ -451,7 +450,6 @@ class CustomEnv(CUDAEnvironmentContext):
 
         return rew
 
-
     def reset(self):
         """
         Env reset().
@@ -482,7 +480,7 @@ class CustomEnv(CUDAEnvironmentContext):
         )
 
         # Penalty for hitting the edges
-        self.edge_hit_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
+        self.edge_hit_reward_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
 
         # Reinitialize some variables that may have changed during previous episode
         self.preys = copy.deepcopy(self.preys_at_reset)
@@ -527,16 +525,16 @@ class CustomEnv(CUDAEnvironmentContext):
         }
         info = {}
 
-        return  obs, rew, done, info
+        return obs, rew, done, info
 
-    
+
 class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
     """
     CUDA version of the CustomEnv environment.
     Note: this class subclasses the Python environment class CustomEnv,
     and also the  CUDAEnvironmentContext
     """
-    
+
     def get_data_dictionary(self):
         """
         Create a dictionary of data to push to the device
@@ -573,10 +571,15 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
         data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
         data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
         data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
-        
-                #_OBSERVATIONS,
-                #_ACTIONS,
-                #_REWARDS,
+
+        # _OBSERVATIONS,
+        # _ACTIONS,
+        data_dict.add_data(
+            name="edge_hit_reward_penalty",
+            data=self.edge_hit_reward_penalty,
+            save_copy_and_apply_at_reset=True,
+        )
+        # _REWARDS,
         data_dict.add_data(
             name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
         )
@@ -607,7 +610,6 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
     def get_tensor_dictionary(self):
         tensor_dict = DataFeed()
         return tensor_dict
-    
 
     def step(self, actions=None):
         """
@@ -638,6 +640,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "max_seeing_distance",
             _OBSERVATIONS,
             _ACTIONS,
+            "edge_hit_reward_penalty",
             _REWARDS,
             "num_preys",
             "num_predators",
@@ -653,10 +656,9 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             ("episode_length", "meta"),
         ]
 
-
         if self.env_backend == "numba":
-            grid=self.cuda_function_manager.grid
-            block=self.cuda_function_manager.block
+            grid = self.cuda_function_manager.grid
+            block = self.cuda_function_manager.block
 
             self.cuda_step[grid, block](
                 *self.cuda_step_function_feed(args)

@@ -32,7 +32,7 @@ def ComputeDistance(
                    float32[:, ::1],  # direction_arr
                    float32[:, ::1],  # acceleration_arr
                    int32[::1],  # agent_types_arr
-                   float32,  # kGridLength
+                   float32,  # kStageSize
                    float32,  # kMaxSpeed
                    int32[:, ::1],  # still_in_the_game_arr
                    boolean,  # kUseFullObservation
@@ -50,7 +50,7 @@ def CudaCustomEnvGenerateObservation(
         direction_arr,
         acceleration_arr,
         agent_types_arr,
-        kGridLength,
+        kStageSize,
         kMaxSpeed,
         still_in_the_game_arr,
         kUseFullObservation,
@@ -90,11 +90,11 @@ def CudaCustomEnvGenerateObservation(
                     # update relative normalized pos_x of the other agent
                     obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
                         loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
-                    ) / (math.sqrt(2.0) * kGridLength)
+                    ) / (math.sqrt(2.0) * kStageSize)
                     # update relative normalized pos_y of the other agent
                     obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = float(
                         loc_y_arr[kEnvId, other_agent_id] - loc_y_arr[kEnvId, kThisAgentId]
-                    ) / (math.sqrt(2.0) * kGridLength)
+                    ) / (math.sqrt(2.0) * kStageSize)
                     # update relative normalized speed of the other agent
                     obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = float(
                         speed_arr[kEnvId, other_agent_id] - speed_arr[kEnvId, kThisAgentId]
@@ -130,6 +130,7 @@ def CudaCustomEnvGenerateObservation(
                    int32[:, ::1],
                    int32[::1],
                    int32[::1],
+                   float32,
                    int32,
                    int32,
                    int32,
@@ -139,17 +140,18 @@ def CudaCustomEnvComputeReward(
         rewards_arr,
         loc_x_arr,
         loc_y_arr,
-        kGridLength,
-        edge_hit_penalty_arr,
+        kStageSize,
+        edge_hit_reward_penalty_arr,
         num_preys_arr,
         agent_types_arr,
         kEatingRewardForPredator,
-        kEatingPenaltyForPreys,
-        kEndOfGameRewardForPrey,
-        kEndOfGameRewardForPredator,
+        kEatingPenaltyForPrey,
+        kEndOfGameReward,
+        kEndOfGamePenalty,
         still_in_the_game_arr,
         done_arr,
         env_timestep_arr,
+        kDistanceMarginForReward,
         kNumAgents,
         kEpisodeLength,
         kEnvId,
@@ -161,7 +163,7 @@ def CudaCustomEnvComputeReward(
 
         if still_in_the_game_arr[kEnvId, kThisAgentId]:
             # Add the edge hit penalty and the step rewards / penalties
-            rewards_arr[kEnvId, kThisAgentId] += edge_hit_penalty_arr[
+            rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
                 kEnvId, kThisAgentId
             ]
 
@@ -169,7 +171,7 @@ def CudaCustomEnvComputeReward(
         # The rewards are only set by the runners, so this pause is necessary
         numba_driver.syncthreads()
 
-        min_dist = kGridLength * math.sqrt(2.0)
+        min_dist = kStageSize * math.sqrt(2.0)
         is_prey = not agent_types_arr[kThisAgentId] # 0 for prey, 1 for predator
 
         if is_prey and still_in_the_game_arr[kEnvId, kThisAgentId]:
@@ -189,9 +191,9 @@ def CudaCustomEnvComputeReward(
                         min_dist = dist
                         nearest_predator_id = other_agent_id
 
-            if min_dist < 0.5:  # TODO: need to change that 1
+            if min_dist < kDistanceMarginForReward:  # TODO: need to change that
                 # The prey us eaten
-                rewards_arr[kEnvId, kThisAgentId] += kEatingPenaltyForPreys
+                rewards_arr[kEnvId, kThisAgentId] += kEatingPenaltyForPrey
                 rewards_arr[kEnvId, nearest_predator_id] += kEatingRewardForPredator
 
                 # if kRunnerExitsGameAfterTagged: # TODO : Use to be kRunnerExitsGameAfterTagged but always true
@@ -200,7 +202,7 @@ def CudaCustomEnvComputeReward(
 
             # Add end of game reward for runners at the end of the episode
             if env_timestep_arr[kEnvId] == kEpisodeLength:
-                rewards_arr[kEnvId, kThisAgentId] += kEndOfGameRewardForPrey
+                rewards_arr[kEnvId, kThisAgentId] += kEndOfGameReward
 
     numba_driver.syncthreads()
 
@@ -215,7 +217,7 @@ def CudaCustomEnvComputeReward(
                    float32[:, ::1],  # direction_arr
                    float32[:, ::1],  # acceleration_arr
                    int32[::1],  # agent_types_arr
-                   float32,  # kGridLength
+                   float32,  # kStageSize
                    float32[::1],  # acceleration_actions_arr
                    float32[::1],  # turn_actions_arr
                    float32,  # kMaxSpeed
@@ -225,19 +227,20 @@ def CudaCustomEnvComputeReward(
                    float32,  # kMinTurn
                    int32[:, ::1],  # still_in_the_game_arr
                    boolean,  # kUseFullObservation
-                   float32,  # kSeeingAngle
-                   float32,  # kSeeingDistance
+                   float32,  # kMaxSeeingAngle
+                   float32,  # kMaxSeeingDistance
                    float32[:, :, ::1],  # obs_arr
                    int32[:, :, ::1],  # action_indices_arr
-                   float32[:, ::1],  # edge_hit_penalty_arr
+                   float32[:, ::1],  # edge_hit_reward_penalty_arr
                    int32[:, ::1],  # rewards_arr
                    int32[::1],  # num_preys_arr
                    int32[::1],  # num_predators_arr
                    float32,  # kEdgeHitPenalty
                    float32,  # kEatingRewardForPredator
-                   float32,  # kEatingPenaltyForPreys
-                   float32,  # kEndOfGameRewardForPrey
-                   float32,  # kEndOfGameRewardForPredator
+                   float32,  # kEatingPenaltyForPrey
+                   float32,  # kEndOfGameReward
+                   float32,  # kEndOfGamePenalty
+                   float32,  # kDistanceMarginForReward
                    int32[::1],  # done_arr
                    int32[::1],  # env_timestep_arr
                    int32,  # kNumAgents
@@ -249,7 +252,7 @@ def NumbaCustomEnvStep(
         direction_arr,
         acceleration_arr,
         agent_types_arr,
-        kGridLength,
+        kStageSize,
         acceleration_actions_arr,
         turn_actions_arr,
         kMaxSpeed,
@@ -259,25 +262,25 @@ def NumbaCustomEnvStep(
         kMinTurn,
         still_in_the_game_arr,
         kUseFullObservation,
-        kSeeingAngle,
-        kSeeingDistance,
+        kMaxSeeingAngle,
+        kMaxSeeingDistance,
         obs_arr,
         action_indices_arr,
-        edge_hit_penalty_arr,
+        edge_hit_reward_penalty_arr,
         rewards_arr,
         num_preys_arr,
         num_predators_arr,
         kEdgeHitPenalty,
         kEatingRewardForPredator,
-        kEatingPenaltyForPreys,
-        kEndOfGameRewardForPrey,
-        kEndOfGameRewardForPredator,
+        kEatingPenaltyForPrey,
+        kEndOfGameReward,
+        kEndOfGamePenalty,
+        kDistanceMarginForReward,
         done_arr,
         env_timestep_arr,
         kNumAgents,
         kEpisodeLength,
 ):
-    print("Numba step function call starting")
     # Every block is an environment
     # Every thread is an agent
     kEnvId = numba_driver.blockIdx.x
@@ -333,9 +336,9 @@ def NumbaCustomEnvStep(
         # Check if the agent has crossed the edge
         has_crossed_edge = (
                 loc_x_arr[kEnvId, kThisAgentId] < 0
-                or loc_x_arr[kEnvId, kThisAgentId] > kGridLength
+                or loc_x_arr[kEnvId, kThisAgentId] > kStageSize
                 or loc_y_arr[kEnvId, kThisAgentId] < 0
-                or loc_y_arr[kEnvId, kThisAgentId] > kGridLength
+                or loc_y_arr[kEnvId, kThisAgentId] > kStageSize
         )
 
         # Clip x and y if agent has crossed edge
@@ -343,17 +346,17 @@ def NumbaCustomEnvStep(
         if has_crossed_edge:
             if loc_x_arr[kEnvId, kThisAgentId] < 0:
                 loc_x_arr[kEnvId, kThisAgentId] = 0.0
-            elif loc_x_arr[kEnvId, kThisAgentId] > kGridLength:
-                loc_x_arr[kEnvId, kThisAgentId] = kGridLength
+            elif loc_x_arr[kEnvId, kThisAgentId] > kStageSize:
+                loc_x_arr[kEnvId, kThisAgentId] = kStageSize
 
             if loc_y_arr[kEnvId, kThisAgentId] < 0:
                 loc_y_arr[kEnvId, kThisAgentId] = 0.0
-            elif loc_y_arr[kEnvId, kThisAgentId] > kGridLength:
-                loc_y_arr[kEnvId, kThisAgentId] = kGridLength
+            elif loc_y_arr[kEnvId, kThisAgentId] > kStageSize:
+                loc_y_arr[kEnvId, kThisAgentId] = kStageSize
 
-            edge_hit_penalty_arr[kEnvId, kThisAgentId] = kEdgeHitPenalty
+            edge_hit_reward_penalty_arr[kEnvId, kThisAgentId] = kEdgeHitPenalty
         else:
-            edge_hit_penalty_arr[kEnvId, kThisAgentId] = 0.0
+            edge_hit_reward_penalty_arr[kEnvId, kThisAgentId] = 0.0
 
     numba_driver.syncthreads()
 
@@ -368,7 +371,7 @@ def NumbaCustomEnvStep(
         direction_arr,
         acceleration_arr,
         agent_types_arr,
-        kGridLength,
+        kStageSize,
         kMaxSpeed,
         still_in_the_game_arr,
         kUseFullObservation,
@@ -387,17 +390,18 @@ def NumbaCustomEnvStep(
         rewards_arr,
         loc_x_arr,
         loc_y_arr,
-        kGridLength,
-        edge_hit_penalty_arr,
+        kStageSize,
+        edge_hit_reward_penalty_arr,
         num_preys_arr,
         agent_types_arr,
         kEatingRewardForPredator,
-        kEatingPenaltyForPreys,
-        kEndOfGameRewardForPrey,
-        kEndOfGameRewardForPredator,
+        kEatingPenaltyForPrey,
+        kEndOfGameReward,
+        kEndOfGamePenalty,
         still_in_the_game_arr,
         done_arr,
         env_timestep_arr,
+        kDistanceMarginForReward,
         kNumAgents,
         kEpisodeLength,
         kEnvId,
