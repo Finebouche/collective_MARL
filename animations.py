@@ -61,9 +61,7 @@ def generate_tag_env_rollout_animation(
     ax.set_axis_off()
 
     # Set camera
-    ax.elev = 40
-    ax.azim = -55
-    ax.dist = 10
+    ax.set_box_aspect((40, -55, 10))
 
     # Try to reduce whitespace
     fig.subplots_adjust(left=0, right=1, bottom=-0.2, top=1)
@@ -72,40 +70,40 @@ def generate_tag_env_rollout_animation(
     lines = [None for _ in range(env.num_agents)]
 
     for idx in range(env.num_agents):
-        if idx in env.taggers:
+        if idx in env.predators:
             lines[idx] = ax.plot3D(
-                episode_states["loc_x"][:1, idx] / env.grid_length,
-                episode_states["loc_y"][:1, idx] / env.grid_length,
+                episode_states["loc_x"][:1, idx] / env.stage_size,
+                episode_states["loc_y"][:1, idx] / env.stage_size,
                 0,
                 color=tagger_color,
                 marker="o",
                 markersize=10,
             )[0]
-        else:  # runners
+        else:  # preys
             lines[idx] = ax.plot3D(
-                episode_states["loc_x"][:1, idx] / env.grid_length,
-                episode_states["loc_y"][:1, idx] / env.grid_length,
+                episode_states["loc_x"][:1, idx] / env.stage_size,
+                episode_states["loc_y"][:1, idx] / env.stage_size,
                 [0],
                 color=runner_color,
                 marker="o",
                 markersize=5,
             )[0]
 
-    init_num_runners = env.num_agents - env.num_taggers
+    init_num_preys = env.num_agents - env.num_predators
 
-    def _get_label(timestep, n_runners_alive, init_n_runners):
+    def _get_label(timestep, n_preys_alive, init_n_preys):
         line1 = "Continuous Tag\n"
         line2 = "Time Step:".ljust(14) + f"{timestep:4.0f}\n"
-        frac_runners_alive = n_runners_alive / init_n_runners
-        pct_runners_alive = f"{n_runners_alive:4} ({frac_runners_alive * 100:.0f}%)"
-        line3 = "Runners Left:".ljust(14) + pct_runners_alive
+        frac_preys_alive = n_preys_alive / init_n_preys
+        pct_preys_alive = f"{n_preys_alive:4} ({frac_preys_alive * 100:.0f}%)"
+        line3 = "preys Left:".ljust(14) + pct_preys_alive
         return line1 + line2 + line3
 
     label = ax.text(
         0,
         0,
         0.02,
-        _get_label(0, init_num_runners, init_num_runners).lower(),
+        _get_label(0, init_num_preys, init_num_preys).lower(),
     )
 
     label.set_fontsize(14)
@@ -115,8 +113,8 @@ def generate_tag_env_rollout_animation(
     def animate(i):
         for idx, line in enumerate(lines):
             line.set_data_3d(
-                episode_states["loc_x"][i : i + 1, idx] / env.grid_length,
-                episode_states["loc_y"][i : i + 1, idx] / env.grid_length,
+                episode_states["loc_x"][i : i + 1, idx] / env.stage_size,
+                episode_states["loc_y"][i : i + 1, idx] / env.stage_size,
                 np.zeros(1),
             )
 
@@ -128,12 +126,12 @@ def generate_tag_env_rollout_animation(
                 line.set_color(runner_not_in_game_color)
                 line.set_marker("")
 
-        n_runners_alive = episode_states["still_in_the_game"][i].sum() - env.num_taggers
-        label.set_text(_get_label(i, n_runners_alive, init_num_runners).lower())
+        n_preys_alive = episode_states["still_in_the_game"][i].sum() - env.num_predators
+        label.set_text(_get_label(i, n_preys_alive, init_num_preys).lower())
 
     ani = animation.FuncAnimation(
         fig, animate, np.arange(0, env.episode_length + 1), interval=1000.0 / fps
     )
     plt.close()
 
-    return
+    return ani
