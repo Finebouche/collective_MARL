@@ -116,25 +116,25 @@ def CudaCustomEnvGenerateObservation(
 
 
 # Device helper function to compute rewards
-@numba_driver.jit((int32[:, ::1],
-                   float32[:, ::1],
-                   float32[:, ::1],
-                   float32,
-                   float32[:, ::1],
-                   int32[::1],
-                   int32[::1],
-                   float32,
-                   float32,
-                   float32,
-                   float32,
-                   int32[:, ::1],
-                   int32[::1],
-                   int32[::1],
-                   float32,
-                   int32,
-                   int32,
-                   int32,
-                   int32),
+@numba_driver.jit((int32[:, ::1],  # rewards_arr
+                   float32[:, ::1],  # loc_x_arr
+                   float32[:, ::1],  # loc_y_arr
+                   float32,  # kStageSize
+                   float32[:, ::1],  # edge_hit_reward_penalty_arr
+                   int32[::1],  # num_preys_arr
+                   int32[::1],  # agent_types_arr
+                   float32,  # kEatingRewardForPredator
+                   float32,  # kEatingPenaltyForPrey
+                   float32,  # kEndOfGameReward
+                   float32,  # kEndOfGamePenalty
+                   int32[:, ::1],  # still_in_the_game_arr
+                   int32[::1],  # done_arr
+                   int32[::1],  # env_timestep_arr
+                   float32,  # kDistanceMarginForReward
+                   int32,  # kNumAgents
+                   int32,  # kEpisodeLength
+                   int32,  # kEnvId
+                   int32),  # kThisAgentId
                   device=True)
 def CudaCustomEnvComputeReward(
         rewards_arr,
