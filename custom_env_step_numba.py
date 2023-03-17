@@ -199,26 +199,26 @@ def CudaCustomEnvComputeReward(
                 still_in_the_game_arr[kEnvId, kThisAgentId] = 0
                 num_preys_arr[kEnvId] -= 1
         
+    if env_timestep_arr[kEnvId] == kEpisodeLength:
+        is_prey = not agent_types_arr[kThisAgentId] # 0 for prey, 1 for predator
+        if is_prey:
+            rewards_arr[kEnvId, kThisAgentId] += kEndOfGameReward
+        else:
+            rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
+
+    if num_preys_arr[kEnvId] < (kNumAgents-num_predators_arr[kEnvId]):
+        is_predator = agent_types_arr[kThisAgentId] == 1
+        if is_predator:
+            rewards_arr[kEnvId, kThisAgentId] += kEndOfGameReward
+        else:
+            rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
+
     numba_driver.syncthreads()
-    
 
     if kThisAgentId == 0:
-        if env_timestep_arr[kEnvId] == kEpisodeLength:
-            for other_agent_id in range(kNumAgents):
-                if is_prey:
-                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGameReward
-                else:
-                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
-
-        else: 
-            if kNumAgents < num_preys_arr[kEnvId]+num_predators_arr[kEnvId]:
-                for other_agent_id in range(kNumAgents):
-                    is_predator = agent_types_arr[kThisAgentId] == 1
-                    if is_predator:
-                        rewards_arr[kEnvId, kThisAgentId] += kEndOfGameReward
-                    else:
-                        rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
+        if env_timestep_arr[kEnvId] == kEpisodeLength or num_preys_arr[kEnvId] < (kNumAgents-num_predators_arr[kEnvId]):
             done_arr[kEnvId] = 1
+
 
 
 @numba_driver.jit((float32[:, ::1],  # loc_x_arr

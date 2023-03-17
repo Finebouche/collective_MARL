@@ -131,9 +131,11 @@ def generate_tag_env_rollout_animation(
 
         n_preys_alive = episode_states["still_in_the_game"][i].sum() - env.num_predators
         label.set_text(_get_label(i, n_preys_alive, init_num_preys).lower())
-
+    # count the number of non-nan values in episode_states
+    num_frames = np.count_nonzero(~np.isnan(episode_states["loc_x"][:, 0]))
+    
     ani = animation.FuncAnimation(
-        fig, animate, np.arange(0, env.episode_length + 1), interval=1000.0 / fps
+        fig, animate, np.arange(0, num_frames), interval=1000.0 / fps
     )
     plt.close()
 
