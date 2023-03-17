@@ -349,20 +349,25 @@ class CustomEnv(CUDAEnvironmentContext):
         for agent_id in range(self.num_agents):
             # Set obs for agents still in the game
             # obs = [global_obs, agent_types, still_in_the_game, is_visible, time]
-            if self.use_full_observation:
-                is_visible = np.ones_like(self.num_agents)
-            else:
-                is_visible = np.array([self.compute_distance(agent_id, observed_agent_id) < self.max_seeing_distance for observed_agent_id in
-                                       range(self.num_agents)])
+            # if self.use_full_observation:
+            #     is_visible = np.ones_like(self.num_agents).reshape(1, -1)
+            #     print("num_agents:", self.num_agents)
+            # else:
+            #     is_visible = np.array([self.compute_distance(agent_id, observed_agent_id) < self.max_seeing_distance for observed_agent_id in
+            #                            range(self.num_agents)])
 
             if self.still_in_the_game[agent_id] and self.use_full_observation:
+                # print("normalized_global_obs:", normalized_global_obs.shape)
+                # print("agent_types:", agent_types.shape)
+                # print("still_in_the_game:", self.still_in_the_game.shape)
+                # print("is_visible:", is_visible.shape)
                 obs[agent_id] = np.concatenate(
                     [
                         np.vstack((
                             normalized_global_obs - normalized_global_obs[:, agent_id].reshape(-1, 1),
                             agent_types,
                             self.still_in_the_game,
-                            is_visible
+                            # is_visible
                         ))[:, [idx for idx in range(self.num_agents) if idx != agent_id], ].reshape(-1),
                         # filter out the obs for the current agent
                         time,
@@ -473,6 +478,7 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # Array to keep track of the agents that are still in play
         self.still_in_the_game = np.ones(self.num_agents, dtype=self.int_dtype)
+        # print("still in the game:", self.still_in_the_game.shape)
 
         # Initialize global state for "still_in_the_game" to all ones
         self.global_state[_SIG] = np.ones(
