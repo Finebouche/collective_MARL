@@ -38,11 +38,11 @@ class CustomEnv(CUDAEnvironmentContext):
                  max_seeing_distance=10.0,
                  num_acceleration_levels=10,
                  num_turn_levels=10,
-                 eating_reward_for_predator=10.0,
-                 eating_penalty_for_prey=-10.0,
-                 edge_hit_penalty=-10,
-                 end_of_game_penalty=-1,
-                 end_of_game_reward=1,
+                 starving_penalty_for_predator=1.0,
+                 surviving_reward_for_prey=-1.0,
+                 edge_hit_penalty=-0.1,
+                 end_of_game_penalty=-10,
+                 end_of_game_reward=10,
                  use_full_observation=True,
                  eating_distance=0.02,
                  seed=None,
@@ -183,8 +183,8 @@ class CustomEnv(CUDAEnvironmentContext):
         )
 
         # REWARDS
-        self.eating_reward_for_predator = eating_reward_for_predator
-        self.eating_penalty_for_prey = eating_penalty_for_prey
+        self.starving_penalty_for_predator = starving_penalty_for_predator
+        self.surviving_reward_for_prey = surviving_reward_for_prey
         self.edge_hit_penalty = edge_hit_penalty
         self.end_of_game_penalty = end_of_game_penalty
         self.end_of_game_reward = end_of_game_reward
@@ -594,10 +594,10 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
         )
         data_dict.add_data(name="edge_hit_penalty", data=self.edge_hit_penalty)
         data_dict.add_data(
-            name="eating_reward_for_predator", data=self.eating_reward_for_predator
+            name="starving_penalty_for_predator", data=self.starving_penalty_for_predator
         )
         data_dict.add_data(
-            name="eating_penalty_for_prey", data=self.eating_penalty_for_prey
+            name="surviving_reward_for_prey", data=self.surviving_reward_for_prey
         )
         data_dict.add_data(
             name="end_of_game_penalty",
@@ -651,8 +651,8 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "num_preys",
             "num_predators",
             "edge_hit_penalty",
-            "eating_reward_for_predator",
-            "eating_penalty_for_prey",
+            "starving_penalty_for_predator",
+            "surviving_reward_for_prey",
             "end_of_game_penalty",
             "end_of_game_reward",
             "distance_margin_for_reward",
