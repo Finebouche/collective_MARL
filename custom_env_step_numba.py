@@ -231,6 +231,7 @@ def CudaCustomEnvComputeReward(
                    float32,  # kStageSize
                    float32[::1],  # acceleration_actions_arr
                    float32[::1],  # turn_actions_arr
+                   float32,  # kMinSpeed
                    float32,  # kMaxSpeed
                    float32,  # kMaxAcceleration
                    float32,  # kMinAcceleration
@@ -266,6 +267,7 @@ def NumbaCustomEnvStep(
         kStageSize,
         acceleration_actions_arr,
         turn_actions_arr,
+        kMinSpeed,
         kMaxSpeed,
         kMaxAcceleration,
         kMinAcceleration,
@@ -328,12 +330,12 @@ def NumbaCustomEnvStep(
         # Speed clipping
         speed_arr[kEnvId, kThisAgentId] = min(
             kMaxSpeed,
-            max(0.0, speed_arr[kEnvId, kThisAgentId] + acceleration_arr[kEnvId, kThisAgentId], )
+            max(kMinSpeed, speed_arr[kEnvId, kThisAgentId] + acceleration_arr[kEnvId, kThisAgentId], )
         ) * still_in_the_game_arr[kEnvId, kThisAgentId]
 
         # Reset acceleration to 0 when speed becomes 0 or
         # kMaxSpeed (multiplied by skill levels)
-        if speed_arr[kEnvId, kThisAgentId] <= 0.0 or speed_arr[kEnvId, kThisAgentId] >= kMaxSpeed:
+        if speed_arr[kEnvId, kThisAgentId] <= kMinSpeed or speed_arr[kEnvId, kThisAgentId] >= kMaxSpeed:
             acceleration_arr[kEnvId, kThisAgentId] = 0.0
 
         # Update the agent's location

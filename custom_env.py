@@ -29,6 +29,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  preparation_length=120,
                  starting_location_x=None,
                  starting_location_y=None,
+                 min_speed=0.2,
                  max_speed=1.0,
                  max_acceleration=1.0,
                  min_acceleration=-1.0,
@@ -122,6 +123,7 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # Set the max speed level
         self.max_speed = self.float_dtype(max_speed)
+        self.min_speed = self.float_dtype(min_speed)
 
         # ACTION SPACE
         # The num_acceleration and num_turn levels refer to the number of
@@ -558,6 +560,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
                 ("stage_size", self.stage_size),
                 ("acceleration_actions", self.acceleration_actions),
                 ("turn_actions", self.turn_actions),
+                ("min_speed", self.min_speed),
                 ("max_speed", self.max_speed),
                 ("max_acceleration", self.max_acceleration),
                 ("min_acceleration", self.min_acceleration),
@@ -631,6 +634,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "stage_size",
             "acceleration_actions",
             "turn_actions",
+            "min_speed",
             "max_speed",
             "max_acceleration",
             "min_acceleration",
