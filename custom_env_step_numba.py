@@ -125,7 +125,9 @@ def CudaCustomEnvGenerateObservation(
                    int32[::1],  # num_predators_arr
                    int32[::1],  # agent_types_arr
                    float32,  # kStarvingPenaltyForPredator
+                   float32,  # kEatingRewardForPredator
                    float32,  # kSurvivingRewardForPrey
+                   float32,  # kDeathPenaltyForPrey
                    float32,  # kEndOfGameReward
                    float32,  # kEndOfGamePenalty
                    int32[:, ::1],  # still_in_the_game_arr
@@ -147,7 +149,9 @@ def CudaCustomEnvComputeReward(
         num_predators_arr,
         agent_types_arr,
         kStarvingPenaltyForPredator,
+        kEatingRewardForPredator,
         kSurvivingRewardForPrey,
+        kDeathPenaltyForPrey,
         kEndOfGameReward,
         kEndOfGamePenalty,
         still_in_the_game_arr,
@@ -162,12 +166,6 @@ def CudaCustomEnvComputeReward(
     if kThisAgentId < kNumAgents:
         # Initialize rewards
         rewards_arr[kEnvId, kThisAgentId] = 0
-
-        if still_in_the_game_arr[kEnvId, kThisAgentId]:
-            # Add the edge hit penalty and the step rewards / penalties
-            rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
-                kEnvId, kThisAgentId
-            ]
 
         # Ensure that all the agents rewards are initialized before we proceed
         # The rewards are only set by the runners, so this pause is necessary
@@ -201,9 +199,11 @@ def CudaCustomEnvComputeReward(
             # The prey is eaten
             still_in_the_game_arr[kEnvId, kThisAgentId] = 0
             num_preys_arr[kEnvId] -= 1
-            rewards_arr[kEnvId, nearest_predator_id] -= 2*kStarvingPenaltyForPredator
-            rewards_arr[kEnvId, kThisAgentId] -= 2*kSurvivingRewardForPrey
-
+            rewards_arr[kEnvId, nearest_predator_id] += kEatingRewardForPredator
+            rewards_arr[kEnvId, kThisAgentId] += kDeathPenaltyForPrey
+        else: 
+            rewards_arr[kEnvId, nearest_predator_id] += kStarvingPenaltyForPredator
+            rewards_arr[kEnvId, kThisAgentId] += kSurvivingRewardForPrey
     
 #        if env_timestep_arr[kEnvId] == kEpisodeLength:
 #            if num_preys_arr[kEnvId] < kNumAgents-num_predators_arr[kEnvId]:
@@ -218,6 +218,12 @@ def CudaCustomEnvComputeReward(
 #                else:
 #                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
 #                    
+        if still_in_the_game_arr[kEnvId, kThisAgentId]:
+            # Add the edge hit penalty and the step rewards / penalties
+            rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
+                kEnvId, kThisAgentId
+            ]
+            
     numba_driver.syncthreads()
     
     if kThisAgentId == 0:
@@ -251,7 +257,9 @@ def CudaCustomEnvComputeReward(
                    int32[::1],  # num_predators_arr
                    float32,  # kEdgeHitPenalty
                    float32,  # kStarvingPenaltyForPredator
+                   float32,  # kEatingRewardForPredator
                    float32,  # kSurvivingRewardForPrey
+                   float32,  # kDeathPenaltyForPrey
                    float32,  # kEndOfGameReward
                    float32,  # kEndOfGamePenalty
                    float32,  # kDistanceMarginForReward
@@ -287,7 +295,9 @@ def NumbaCustomEnvStep(
         num_predators_arr,
         kEdgeHitPenalty,
         kStarvingPenaltyForPredator,
+        kEatingRewardForPredator,
         kSurvivingRewardForPrey,
+        kDeathPenaltyForPrey,
         kEndOfGameReward,
         kEndOfGamePenalty,
         kDistanceMarginForReward,
@@ -411,7 +421,9 @@ def NumbaCustomEnvStep(
         num_predators_arr,
         agent_types_arr,
         kStarvingPenaltyForPredator,
+        kEatingRewardForPredator,
         kSurvivingRewardForPrey,
+        kDeathPenaltyForPrey,
         kEndOfGameReward,
         kEndOfGamePenalty,
         still_in_the_game_arr,

@@ -39,8 +39,10 @@ class CustomEnv(CUDAEnvironmentContext):
                  max_seeing_distance=10.0,
                  num_acceleration_levels=10,
                  num_turn_levels=10,
-                 starving_penalty_for_predator=1.0,
-                 surviving_reward_for_prey=-1.0,
+                 starving_penalty_for_predator=-1.0,
+                 eating_reward_for_predator=1.0,
+                 surviving_reward_for_prey=1.0,
+                 death_penalty_for_prey=-1.0,
                  edge_hit_penalty=-0.1,
                  end_of_game_penalty=-10,
                  end_of_game_reward=10,
@@ -186,7 +188,9 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # REWARDS
         self.starving_penalty_for_predator = starving_penalty_for_predator
+        self.eating_reward_for_predator = eating_reward_for_predator
         self.surviving_reward_for_prey = surviving_reward_for_prey
+        self.death_penalty_for_prey = death_penalty_for_prey
         self.edge_hit_penalty = edge_hit_penalty
         self.end_of_game_penalty = end_of_game_penalty
         self.end_of_game_reward = end_of_game_reward
@@ -584,27 +588,23 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             data=self.edge_hit_reward_penalty,
             save_copy_and_apply_at_reset=True,
         )
-        # _REWARDS,
         data_dict.add_data(
             name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
         )
         data_dict.add_data(
             name="num_predators", data=self.num_predators, save_copy_and_apply_at_reset=True
         )
-        data_dict.add_data(name="edge_hit_penalty", data=self.edge_hit_penalty)
-        data_dict.add_data(
-            name="starving_penalty_for_predator", data=self.starving_penalty_for_predator
-        )
-        data_dict.add_data(
-            name="surviving_reward_for_prey", data=self.surviving_reward_for_prey
-        )
-        data_dict.add_data(
-            name="end_of_game_penalty",
-            data=self.end_of_game_penalty,
-        )
-        data_dict.add_data(
-            name="end_of_game_reward",
-            data=self.end_of_game_reward,
+        # _REWARDS,
+        data_dict.add_data_list(
+            [
+                ("edge_hit_penalty", self.edge_hit_penalty),
+                ("starving_penalty_for_predator", self.starving_penalty_for_predator),
+                ("eating_reward_for_predator", self.eating_reward_for_predator),
+                ("surviving_reward_for_prey", self.surviving_reward_for_prey),
+                ("death_penalty_for_prey", self.death_penalty_for_prey),
+                ("end_of_game_penalty", self.end_of_game_penalty),
+                ("end_of_game_reward", self.end_of_game_reward),
+            ]
         )
         data_dict.add_data(
             name="distance_margin_for_reward", data=self.distance_margin_for_reward
@@ -652,7 +652,9 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "num_predators",
             "edge_hit_penalty",
             "starving_penalty_for_predator",
+            "eating_reward_for_predator",
             "surviving_reward_for_prey",
+            "death_penalty_for_prey",
             "end_of_game_penalty",
             "end_of_game_reward",
             "distance_margin_for_reward",
