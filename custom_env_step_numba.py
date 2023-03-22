@@ -12,7 +12,6 @@ kEpsilon = 1.0e-10
                    float32[:, ::1],
                    int32,
                    int32,
-                   int32,
                    int32),
                   device=True,
                   inline=True)
@@ -24,14 +23,23 @@ def ComputeDistance(
         + ((loc_y_arr[kEnvId, kThisAgentId1] - loc_y_arr[kEnvId, kThisAgentId2]) ** 2)
     )
 
+# Device helper function to compute angle between two agents
+@numba_driver.jit((float32[:, ::1],
+                   float32[:, ::1],
+                   float32[:, ::1],
+                   int32,
+                   int32,
+                   int32),
+                  device=True,
+                  inline=True)
 def ComputeAngle(
-        loc_x_arr, loc_y_arr, kThisAgentId1, kThisAgentId2, kEnvId
+        loc_x_arr, loc_y_arr, direction_arr, kThisAgentId1, kThisAgentId2, kEnvId
 ):
     return math.degrees(
         math.atan2(
             loc_y_arr[kEnvId, kThisAgentId1] - loc_y_arr[kEnvId, kThisAgentId2], 
             loc_x_arr[kEnvId, kThisAgentId1] - loc_x_arr[kEnvId, kThisAgentId2]
-        )
+        ) - direction_arr[kEnvId, kThisAgentId1]
     )
 
 # Device helper function to generate observation
@@ -100,7 +108,7 @@ def CudaCustomEnvGenerateObservation(
             # Update obs of other agents
             for other_agent_id in range(kNumAgents):
                 if not other_agent_id == kThisAgentId:
-                    if kUseFullObservation or (ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)<kMaxSeeingDistance and ComputeAngle(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)<kMaxSeeingAngle):
+                    if kUseFullObservation or (ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)<kMaxSeeingDistance and ComputeAngle(loc_x_arr, loc_y_arr, direction_arr, kThisAgentId, other_agent_id, kEnvId)<kMaxSeeingAngle):
                         # update relative normalized pos_x of the other agent
                         obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
                             loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
@@ -202,7 +210,6 @@ def CudaCustomEnvComputeReward(
                         kThisAgentId,
                         other_agent_id,
                         kEnvId,
-                        kNumAgents,
                     )
                     if dist < min_dist:
                         min_dist = dist
