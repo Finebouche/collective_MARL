@@ -17,7 +17,7 @@ kEpsilon = 1.0e-10
                   device=True,
                   inline=True)
 def ComputeDistance(
-        loc_x_arr, loc_y_arr, kThisAgentId1, kThisAgentId2
+        loc_x_arr, loc_y_arr, kThisAgentId1, kThisAgentId2, kEnvId
 ):
     return math.sqrt(
         ((loc_x_arr[kEnvId, kThisAgentId1] - loc_x_arr[kEnvId, kThisAgentId2]) ** 2)
@@ -25,7 +25,7 @@ def ComputeDistance(
     )
 
 def ComputeAngle(
-        loc_x_arr, loc_y_arr, kThisAgentId1, kThisAgentId2
+        loc_x_arr, loc_y_arr, kThisAgentId1, kThisAgentId2, kEnvId
 ):
     return math.degrees(
         math.atan2(
@@ -96,35 +96,35 @@ def CudaCustomEnvGenerateObservation(
 
         # Update obs for agents still in the game
         if still_in_the_game_arr[kEnvId, kThisAgentId]:
-                index = 0
-                # Update obs of other agents
-                for other_agent_id in range(kNumAgents):
-                    if not other_agent_id == kThisAgentId:
-                        if kUseFullObservation or (ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id)<kMaxSeeingDistance and ComputeAngle(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id)<kMaxSeeingAngle):
-                            # update relative normalized pos_x of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
-                                loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
-                            ) / (math.sqrt(2.0) * kStageSize)
-                            # update relative normalized pos_y of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = float(
-                                loc_y_arr[kEnvId, other_agent_id] - loc_y_arr[kEnvId, kThisAgentId]
-                            ) / (math.sqrt(2.0) * kStageSize)
-                            # update relative normalized speed of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = float(
-                                speed_arr[kEnvId, other_agent_id] - speed_arr[kEnvId, kThisAgentId]
-                            ) / (kMaxSpeed + kEpsilon)
-                            # update relative normalized acceleration of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = float(
-                                acceleration_arr[kEnvId, other_agent_id] - acceleration_arr[kEnvId, kThisAgentId]
-                            ) / (kMaxSpeed + kEpsilon)
-                            # update relative normalized direction of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = float(
-                                direction_arr[kEnvId, other_agent_id] - direction_arr[kEnvId, kThisAgentId]
-                            ) / kTwoPi
-                            index += 1
+            index = 0
+            # Update obs of other agents
+            for other_agent_id in range(kNumAgents):
+                if not other_agent_id == kThisAgentId:
+                    if kUseFullObservation or (ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)<kMaxSeeingDistance and ComputeAngle(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)<kMaxSeeingAngle):
+                        # update relative normalized pos_x of the other agent
+                        obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
+                            loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
+                        ) / (math.sqrt(2.0) * kStageSize)
+                        # update relative normalized pos_y of the other agent
+                        obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = float(
+                            loc_y_arr[kEnvId, other_agent_id] - loc_y_arr[kEnvId, kThisAgentId]
+                        ) / (math.sqrt(2.0) * kStageSize)
+                        # update relative normalized speed of the other agent
+                        obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = float(
+                            speed_arr[kEnvId, other_agent_id] - speed_arr[kEnvId, kThisAgentId]
+                        ) / (kMaxSpeed + kEpsilon)
+                        # update relative normalized acceleration of the other agent
+                        obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = float(
+                            acceleration_arr[kEnvId, other_agent_id] - acceleration_arr[kEnvId, kThisAgentId]
+                        ) / (kMaxSpeed + kEpsilon)
+                        # update relative normalized direction of the other agent
+                        obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = float(
+                            direction_arr[kEnvId, other_agent_id] - direction_arr[kEnvId, kThisAgentId]
+                        ) / kTwoPi
+                        index += 1
             
 
-            # add the time remaining in the episode
+            # add the time remaining in the episode as the last feature
             obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
                     float(env_timestep_arr[kEnvId]) / kEpisodeLength
             )
