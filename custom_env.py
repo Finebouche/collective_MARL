@@ -30,15 +30,15 @@ class CustomEnv(CUDAEnvironmentContext):
                  starting_location_x=None,
                  starting_location_y=None,
                  min_speed=0.2,
-                 max_speed=1.0,
-                 max_acceleration=1.0,
-                 min_acceleration=-1.0,
-                 max_turn=np.pi / 2,
-                 min_turn=-np.pi / 2,
+                 max_speed=0.5,
+                 max_acceleration=0.5,
+                 min_acceleration=-0.5,
+                 max_turn=np.pi / 4,
+                 min_turn=-np.pi / 4,
                  max_seeing_angle=np.pi / 2,
                  max_seeing_distance=10.0,
-                 num_acceleration_levels=10,
-                 num_turn_levels=10,
+                 num_acceleration_levels=5,
+                 num_turn_levels=5,
                  starving_penalty_for_predator=-1.0,
                  eating_reward_for_predator=1.0,
                  surviving_reward_for_prey=1.0,
@@ -47,6 +47,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  end_of_game_penalty=-10,
                  end_of_game_reward=10,
                  use_full_observation=True,
+                 num_other_agents_observed = 20,
                  eating_distance=0.02,
                  seed=None,
                  env_backend="numba",
@@ -174,6 +175,7 @@ class CustomEnv(CUDAEnvironmentContext):
         # OBSERVATION SPACE
         self.observation_space = None  # Note: this will be set via the env_wrapper
         self.use_full_observation = use_full_observation
+        self.num_other_agents_observed = num_other_agents_observed
 
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
@@ -578,6 +580,24 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             save_copy_and_apply_at_reset=True,
         )
         data_dict.add_data(name="use_full_observation", data=self.use_full_observation)
+        data_dict.add_data(name="num_other_agents_observed", data=self.num_other_agents_observed)
+        data_dict.add_data(
+            name="neighbor_distances",
+            data=np.zeros((self.num_agents, self.num_agents - 1), dtype=np.float32),
+            save_copy_and_apply_at_reset=True,
+        )
+        data_dict.add_data(
+            name="neighbor_ids_sorted_by_distance",
+            data=np.zeros((self.num_agents, self.num_agents - 1), dtype=np.int32),
+            save_copy_and_apply_at_reset=True,
+        )
+        data_dict.add_data(
+            name="nearest_neighbor_ids",
+            data=np.zeros(
+                (self.num_agents, self.num_other_agents_observed), dtype=np.int32
+            ),
+            save_copy_and_apply_at_reset=True,
+        )
         data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
         data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
 
@@ -642,6 +662,10 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "min_turn",
             "still_in_the_game",
             "use_full_observation",
+            "num_other_agents_observed",
+            "neighbor_distances",
+            "neighbor_ids_sorted_by_distance",
+            "nearest_neighbor_ids",
             "max_seeing_angle",
             "max_seeing_distance",
             _OBSERVATIONS,
