@@ -6,35 +6,39 @@ run_config  = dict(
 
     # Environment settings
     env =dict(
-        num_preys= 50,
-        num_predators= 1,
-        stage_size= 40,
-        episode_length= 500,
-        preparation_length= 100,
-        max_acceleration= 0.1,
-        max_turn= 2.35,  # 3*pi/4 radians
-        num_acceleration_levels= 10,
-        num_turn_levels= 10,
-        max_seeing_angle=np.pi / 4*3,
+        num_preys=50,
+        num_predators=1,
+        stage_size=50,
+        episode_length=500,
+        preparation_length=120,
+        min_speed=0.2,
+        max_speed=0.5,
+        max_acceleration=0.5,
+        min_acceleration=-0.5,
+        max_turn=np.pi / 4,
+        min_turn=-np.pi / 4,
+        max_seeing_angle=np.pi / 2,
         max_seeing_distance=10.0,
-        starving_penalty_for_predator= -1.0,
-        eating_reward_for_predator= 10.0,
-        surviving_reward_for_prey= 1.0,
-        death_penalty_for_prey= -10.0,
-        edge_hit_penalty= -0.1,
-        end_of_game_penalty= -100.0,
-        end_of_game_reward= 100.0,
-        use_full_observation= False,
-        eating_distance= 0.03,
-        seed= 274880,
-        env_backend= "numba",
+        num_acceleration_levels=5,
+        num_turn_levels=5,
+        starving_penalty_for_predator=-1.0,
+        eating_reward_for_predator=1000.0,
+        surviving_reward_for_prey=1.0,
+        death_penalty_for_prey=-1000.0,
+        edge_hit_penalty=-0.1,
+        end_of_game_penalty=-10,
+        end_of_game_reward=10,
+        use_full_observation=True,
+        eating_distance=0.02,
+        seed=None,
+        env_backend="numba",
     ),
 
     # Trainer settings
     trainer=dict(
-        num_envs= 400, # number of environment replicas
+        num_envs= 800, # number of environment replicas
         train_batch_size= 10000, # total batch size used for training per iteration (across all the environments)
-        num_episodes= 700, # number of episodes to run the training for (can be arbitrarily high)
+        num_episodes= 10000, # number of episodes to run the training for (can be arbitrarily high)
     ),
     # Policy network settings
     policy=dict( # list all the policies below

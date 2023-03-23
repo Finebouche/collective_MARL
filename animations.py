@@ -70,7 +70,6 @@ def generate_animation(
     # count the number of non-nan values in episode_states
     num_frames = np.count_nonzero(~np.isnan(episode_states["loc_x"][:, 0]))
     init_num_preys = env.num_agents - env.num_predators
-
         
     # Init lines
     lines = [None for _ in range(env.num_agents)]
@@ -104,8 +103,8 @@ def generate_animation(
         label.set_fontweight("normal")
         label.set_color("#666666")
 
+    # Init lines values
     def init_agent_drawing():
-        # Plot init data
         for idx, line in enumerate(lines):
             line.set_data_3d(
                 episode_states["loc_x"][:1, idx],
