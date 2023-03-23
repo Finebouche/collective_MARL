@@ -1,0 +1,7 @@
+--find-links https://download.pytorch.org/whl/cu113/torch_stable.html
+torch==1.10.2
+gym>=0.18, <0.26
+pyyaml>=5.4
+numba
+gym==0.25.2
+matplotlib

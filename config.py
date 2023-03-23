@@ -1,3 +1,4 @@
+import numpy as np
 
 run_config  = dict(
     # Sample YAML configuration for the tag continuous environment
@@ -8,21 +9,23 @@ run_config  = dict(
         num_preys= 50,
         num_predators= 1,
         stage_size= 40,
-        episode_length= 300,
+        episode_length= 500,
         preparation_length= 100,
         max_acceleration= 0.1,
         max_turn= 2.35,  # 3*pi/4 radians
         num_acceleration_levels= 10,
         num_turn_levels= 10,
+        max_seeing_angle=np.pi / 4*3,
+        max_seeing_distance=10.0,
         starving_penalty_for_predator= -1.0,
-        eating_reward_for_predator= 1.0,
+        eating_reward_for_predator= 10.0,
         surviving_reward_for_prey= 1.0,
-        death_penalty_for_prey= -1.0,
+        death_penalty_for_prey= -10.0,
         edge_hit_penalty= -0.1,
         end_of_game_penalty= -100.0,
         end_of_game_reward= 100.0,
         use_full_observation= False,
-        eating_distance= 0.02,
+        eating_distance= 0.03,
         seed= 274880,
         env_backend= "numba",
     ),
@@ -43,8 +46,7 @@ run_config  = dict(
             vf_loss_coeff= 1, # loss coefficient for the value function loss
             entropy_coeff= [[0, 0.5], [2000000, 0.05]], # entropy coefficient (can be a list of lists)
             model=dict( # policy model settings
-                module_name= "fully_connected", # model type
-                class_name= "FullyConnected", # class type
+                type= "predator_policy",
                 fc_dims= [256, 256], # dimension(s) of the fully connected layers as a list
                 model_ckpt_filepath= "", # filepath (used to restore a previously saved model)
             ),

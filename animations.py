@@ -8,8 +8,7 @@ from matplotlib import animation
 from matplotlib.patches import Polygon
 from mpl_toolkits.mplot3d import art3d
 
-
-def generate_tag_env_rollout_animation(
+def generate_animation(
     trainer,
     fps=50,
     tagger_color="#C843C3",
@@ -24,8 +23,11 @@ def generate_tag_env_rollout_animation(
     episode_states = trainer.fetch_episode_states(
         ["loc_x", "loc_y", "still_in_the_game"]
     )
-    assert isinstance(episode_states, dict)
     env = trainer.cuda_envs.env
+
+    episode_states["loc_x"] = episode_states["loc_x"]/ env.stage_size
+    episode_states["loc_y"] = episode_states["loc_y"]/ env.stage_size
+    assert isinstance(episode_states, dict)
 
     fig, ax = plt.subplots(
         1, 1, figsize=(fig_width, fig_height)
@@ -50,7 +52,7 @@ def generate_tag_env_rollout_animation(
     ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
     ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
 
-    # Hide grid agents_drawing
+    # Hide grid lines
     ax.grid(False)
 
     # Hide axes ticks
@@ -65,60 +67,65 @@ def generate_tag_env_rollout_animation(
     # Try to reduce whitespace
     fig.subplots_adjust(left=0, right=1, bottom=-0.2, top=1)
 
-    # Init agents_drawing
-    agents_drawing = [None for _ in range(env.num_agents)]
+    # count the number of non-nan values in episode_states
+    num_frames = np.count_nonzero(~np.isnan(episode_states["loc_x"][:, 0]))
+    init_num_preys = env.num_agents - env.num_predators
 
-    # Plot init data
+        
+    # Init lines
+    lines = [None for _ in range(env.num_agents)]
     for idx in range(env.num_agents):
         if idx in env.predators:
-            agents_drawing[idx] = ax.plot3D(
-                episode_states["loc_x"][:1, idx] / env.stage_size,
-                episode_states["loc_y"][:1, idx] / env.stage_size,
-                0,
+            lines[idx], = ax.plot3D(
+                [],
+                [],
+                [],
                 color=tagger_color,
                 marker="o",
                 markersize=10,
-            )[0]
+            )
         else:  # preys
-            agents_drawing[idx] = ax.plot3D(
-                episode_states["loc_x"][:1, idx] / env.stage_size,
-                episode_states["loc_y"][:1, idx] / env.stage_size,
-                [0],
+            lines[idx], = ax.plot3D(
+                [],
+                [],
+                [],
                 color=runner_color,
                 marker="o",
                 markersize=5,
-            )[0]
+            )
 
-    init_num_preys = env.num_agents - env.num_predators
-
-    # Label the plot
-    def _get_label(timestep, n_preys_alive, init_n_preys):
-        line1 = "Continuous Tag\n"
-        line2 = "Time Step:".ljust(14) + f"{timestep:4.0f}\n"
-        frac_preys_alive = n_preys_alive / init_n_preys
-        pct_preys_alive = f"{n_preys_alive:4} ({frac_preys_alive * 100:.0f}%)"
-        line3 = "preys Left:".ljust(14) + pct_preys_alive
-        return line1 + line2 + line3
-
-    label = ax.text(
-        0,
-        0,
-        0.02,
-        _get_label(0, init_num_preys, init_num_preys).lower(),
+    labels=[None, None]
+    ax.text(0, 0, 0.02, "Collective Behavior\n\n", fontsize=14, color="#666666")    
+    labels[0] = ax.text(0, 0, 0.02, "",)
+    labels[1] = ax.text(0, 0, 0.02, "",
     )
+    for i, label in enumerate(labels):
+        label.set_fontsize(14)
+        label.set_fontweight("normal")
+        label.set_color("#666666")
 
-    label.set_fontsize(14)
-    label.set_fontweight("normal")
-    label.set_color("#666666")
+    def init_agent_drawing():
+        # Plot init data
+        for idx, line in enumerate(lines):
+            line.set_data_3d(
+                episode_states["loc_x"][:1, idx],
+                episode_states["loc_y"][:1, idx],
+                [0],
+            )
 
+        labels[0].set_text("Time Step:".ljust(14) + f"{0:4.0f}\n")
+        labels[1].set_text("preys Left:".ljust(14) + f"{init_num_preys:4} ({100:.0f}%)")
+        return lines + labels
+
+    
     # Animate
     def animate(i):
-        for idx, drawing in enumerate(agents_drawing):
+        for idx, line in enumerate(lines):
             # Update drawing
-            drawing.set_data_3d(
-                episode_states["loc_x"][i : i + 1, idx] / env.stage_size,
-                episode_states["loc_y"][i : i + 1, idx] / env.stage_size,
-                np.zeros(1),
+            line.set_data_3d(
+                episode_states["loc_x"][i : i + 1, idx],
+                episode_states["loc_y"][i : i + 1, idx],
+                [0],
             )
 
             still_in_game = episode_states["still_in_the_game"][i, idx]
@@ -126,16 +133,17 @@ def generate_tag_env_rollout_animation(
             if still_in_game:
                 pass
             else:
-                drawing.set_color(runner_not_in_game_color)
-                drawing.set_marker("")
+                line.set_color(runner_not_in_game_color)
+                line.set_marker("")
 
         n_preys_alive = episode_states["still_in_the_game"][i].sum() - env.num_predators
-        label.set_text(_get_label(i, n_preys_alive, init_num_preys).lower())
-    # count the number of non-nan values in episode_states
-    num_frames = np.count_nonzero(~np.isnan(episode_states["loc_x"][:, 0]))
+        labels[0].set_text("Time Step:".ljust(14) + f"{i:4.0f}\n")
+        labels[1].set_text("preys Left:".ljust(14) + f"{n_preys_alive:4} ({n_preys_alive / init_num_preys * 100:.0f}%)")
+        return lines + labels
+
     
     ani = animation.FuncAnimation(
-        fig, animate, np.arange(0, num_frames), interval=1000.0 / fps
+        fig, animate, np.arange(0, num_frames), interval=1000.0 / fps, init_func=init_agent_drawing, blit = True
     )
     plt.close()
 
