@@ -35,8 +35,6 @@ class CustomEnv(CUDAEnvironmentContext):
                  min_acceleration=-0.5,
                  max_turn=np.pi / 4,
                  min_turn=-np.pi / 4,
-                 max_seeing_angle=np.pi / 2,
-                 max_seeing_distance=10.0,
                  num_acceleration_levels=5,
                  num_turn_levels=5,
                  starving_penalty_for_predator=-1.0,
@@ -47,7 +45,9 @@ class CustomEnv(CUDAEnvironmentContext):
                  end_of_game_penalty=-10,
                  end_of_game_reward=10,
                  use_full_observation=True,
-                 num_other_agents_observed = 20,
+                 max_seeing_angle=None,
+                 max_seeing_distance=None,
+                 num_other_agents_observed = None,
                  eating_distance=0.02,
                  seed=None,
                  env_backend="numba",
@@ -142,8 +142,6 @@ class CustomEnv(CUDAEnvironmentContext):
         self.max_turn = self.float_dtype(max_turn)
         self.min_turn = self.float_dtype(min_turn)
 
-        self.max_seeing_angle = max_seeing_angle
-        self.max_seeing_distance = max_seeing_distance
 
         # Acceleration actions
         self.acceleration_actions = np.linspace(
@@ -173,10 +171,16 @@ class CustomEnv(CUDAEnvironmentContext):
         }
 
         # OBSERVATION SPACE
+        if sum(var for var in [use_full_observation, num_other_agents_observed is not None, (max_seeing_angle is not None and max_seeing_distance is not None)]) != 1:
+            raise ValueError("Only one of use_full_observation, num_other_agents_observed, and max_seeing_angle should be set.")
+
+
         self.observation_space = None  # Note: this will be set via the env_wrapper
         self.use_full_observation = use_full_observation
-        self.num_other_agents_observed = num_other_agents_observed
-
+        self.num_other_agents_observed = self.num_agents if num_other_agents_observed is None else num_other_agents_observed
+        self.max_seeing_angle = stage_size/np.sqrt(2) if max_seeing_angle is None else max_seeing_angle
+        self.max_seeing_distance = np.pi if max_seeing_distance is None else max_seeing_distance
+        
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
 
@@ -184,7 +188,7 @@ class CustomEnv(CUDAEnvironmentContext):
         # If a predator is closer than this to a prey,
         # the predator eats the prey
         assert 0 <= eating_distance <= 1
-        self.distance_margin_for_reward = (eating_distance * self.stage_size).astype(
+        self.eating_distance = (eating_distance * self.stage_size).astype(
             self.float_dtype
         )
 
@@ -442,7 +446,7 @@ class CustomEnv(CUDAEnvironmentContext):
                 rew[agent_id] += self.step_rewards[agent_id]
 
         for idx, prey_id in enumerate(preys_list):
-            if min_preys_to_predators_distances[idx] < self.distance_margin_for_reward:
+            if min_preys_to_predators_distances[idx] < self.eating_distance:
                 # the prey is eaten!
                 rew[prey_id] += self.tag_penalty_for_prey
                 rew[nearest_predator_ids[idx]] += self.tag_reward_for_predator
@@ -627,7 +631,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             ]
         )
         data_dict.add_data(
-            name="distance_margin_for_reward", data=self.distance_margin_for_reward
+            name="eating_distance", data=self.eating_distance
         )
 
         return data_dict
@@ -661,6 +665,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "max_turn",
             "min_turn",
             "still_in_the_game",
+            _OBSERVATIONS,
             "use_full_observation",
             "num_other_agents_observed",
             "neighbor_distances",
@@ -668,7 +673,6 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "nearest_neighbor_ids",
             "max_seeing_angle",
             "max_seeing_distance",
-            _OBSERVATIONS,
             _ACTIONS,
             "edge_hit_reward_penalty",
             _REWARDS,
@@ -681,7 +685,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "death_penalty_for_prey",
             "end_of_game_penalty",
             "end_of_game_reward",
-            "distance_margin_for_reward",
+            "eating_distance",
             "_done_",
             "_timestep_",
             ("n_agents", "meta"),

@@ -2,7 +2,7 @@ import numpy as np
 
 run_config  = dict(
     # Sample YAML configuration for the tag continuous environment
-    name= "tag_continuous",
+    name= "collective_emergence",
 
     # Environment settings
     env =dict(
@@ -11,14 +11,12 @@ run_config  = dict(
         stage_size=50,
         episode_length=500,
         preparation_length=120,
-        min_speed=0,
+        min_speed=0.2,
         max_speed=1,
         max_acceleration=0.1,
         min_acceleration=-0.1,
         max_turn=np.pi / 4,
         min_turn=-np.pi / 4,
-        max_seeing_angle=np.pi / 2,
-        max_seeing_distance=10.0,
         num_acceleration_levels=5,
         num_turn_levels=5,
         starving_penalty_for_predator=0,
@@ -28,8 +26,10 @@ run_config  = dict(
         edge_hit_penalty=-0.5,
         end_of_game_penalty=-10,
         end_of_game_reward=10,
-        use_full_observation=True,
-        num_other_agents_observed = 10,
+        use_full_observation=False,
+        max_seeing_angle=np.pi / 2,
+        max_seeing_distance=8,
+        num_other_agents_observed = None,
         eating_distance=0.02,
         seed=None,
         env_backend="numba",

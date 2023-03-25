@@ -95,6 +95,7 @@ def CudaCustomEnvGenerateObservation(
 
     if kThisAgentId < kNumAgents:
 
+        # FULL OBSERVATION
         if kUseFullObservation:
             index = 0
 
@@ -147,8 +148,8 @@ def CudaCustomEnvGenerateObservation(
                 obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
                         float(env_timestep_arr[kEnvId]) / kEpisodeLength
                 )
-
-        else:
+        # BASED ON NUMBER 
+        elif kNumOtherAgentsObserved<kNumAgents:
             # Initialize obs to all zeros
             for idx in range(kNumOtherAgentsObserved):
                 obs_arr[kEnvId, kThisAgentId, 0 * kNumOtherAgentsObserved + idx] = 0.0
@@ -234,7 +235,60 @@ def CudaCustomEnvGenerateObservation(
                     obs_arr[kEnvId, kThisAgentId, 6 * kNumOtherAgentsObserved + idx] = still_in_the_game_arr[kEnvId, kOtherAgentId]
 
                 obs_arr[kEnvId, kThisAgentId, num_features * kNumOtherAgentsObserved] = (float(env_timestep_arr[kEnvId]) / kEpisodeLength)
-                    
+                  
+        # BASED ON DISTANCE 
+        else:
+            index = 0
+
+            # Initialize obs of other agents to 0 physics variable and to agent type and still in the game
+            for other_agent_id in range(kNumAgents):
+                if not other_agent_id == kThisAgentId:
+                    obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = 0.0 # futur position of loc_x
+                    obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = 0.0
+                    obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = 0.0
+                    obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = 0.0
+                    obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = 0.0
+                    obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = agent_types_arr[other_agent_id]
+                    obs_arr[kEnvId, kThisAgentId, 6 * (kNumAgents - 1) + index] = still_in_the_game_arr[kEnvId, other_agent_id]
+                    index += 1
+
+            obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = 0.0
+                
+            # Update obs for agents still in the game
+            if still_in_the_game_arr[kEnvId, kThisAgentId]:
+                index = 0
+                # Update obs of other agents
+                for other_agent_id in range(kNumAgents):
+                    if not other_agent_id == kThisAgentId:
+                        ditance = ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)
+                        angle = ComputeAngle(loc_x_arr, loc_y_arr, direction_arr, kThisAgentId, other_agent_id, kEnvId)
+                        if ditance<kMaxSeeingDistance and angle<kMaxSeeingAngle:
+                            # update relative normalized pos_x of the other agent
+                            obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
+                                loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
+                            ) / (math.sqrt(2.0) * kStageSize)
+                            # update relative normalized pos_y of the other agent
+                            obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = float(
+                                loc_y_arr[kEnvId, other_agent_id] - loc_y_arr[kEnvId, kThisAgentId]
+                            ) / (math.sqrt(2.0) * kStageSize)
+                            # update relative normalized speed of the other agent
+                            obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = float(
+                                speed_arr[kEnvId, other_agent_id] - speed_arr[kEnvId, kThisAgentId]
+                            ) / (kMaxSpeed + kEpsilon)
+                            # update relative normalized acceleration of the other agent
+                            obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = float(
+                                acceleration_arr[kEnvId, other_agent_id] - acceleration_arr[kEnvId, kThisAgentId]
+                            ) / (kMaxSpeed + kEpsilon)
+                            # update relative normalized direction of the other agent
+                            obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = float(
+                                direction_arr[kEnvId, other_agent_id] - direction_arr[kEnvId, kThisAgentId]
+                            ) / kTwoPi
+                            index += 1
+
+                # add the time remaining in the episode as the last feature
+                obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
+                        float(env_timestep_arr[kEnvId]) / kEpisodeLength
+                )
 
 # Device helper function to compute rewards
 @numba_driver.jit((float32[:, ::1],  # rewards_arr
@@ -254,7 +308,7 @@ def CudaCustomEnvGenerateObservation(
                    int32[:, ::1],  # still_in_the_game_arr
                    int32[::1],  # done_arr
                    int32[::1],  # env_timestep_arr
-                   float32,  # kDistanceMarginForReward
+                   float32,  # kEatingDistance
                    int32,  # kNumAgents
                    int32,  # kEpisodeLength
                    int32,  # kEnvId
@@ -278,7 +332,7 @@ def CudaCustomEnvComputeReward(
         still_in_the_game_arr,
         done_arr,
         env_timestep_arr,
-        kDistanceMarginForReward,
+        kEatingDistance,
         kNumAgents,
         kEpisodeLength,
         kEnvId,
@@ -287,47 +341,47 @@ def CudaCustomEnvComputeReward(
     if kThisAgentId < kNumAgents:
         # Initialize rewards
         rewards_arr[kEnvId, kThisAgentId] = 0
-
         # Ensure that all the agents rewards are initialized before we proceed
-        # The rewards are only set by the runners, so this pause is necessary
         numba_driver.syncthreads()
 
-        min_dist = kStageSize * math.sqrt(2.0)
-        is_prey = not agent_types_arr[kThisAgentId] # 0 for prey, 1 for predator
+        if still_in_the_game_arr[kEnvId, kThisAgentId]:
+            min_dist = kStageSize * math.sqrt(2.0)
+            is_prey = not agent_types_arr[kThisAgentId] # 0 for prey, 1 for predator
 
-        if is_prey and still_in_the_game_arr[kEnvId, kThisAgentId]:
-            rewards_arr[kEnvId, kThisAgentId] = kSurvivingRewardForPrey
-            for other_agent_id in range(kNumAgents):
-                is_predator = agent_types_arr[other_agent_id] == 1
-
-                # prey doesn`t compare with itself because it only compares to predators
-                if is_predator:
-                    dist = ComputeDistance(
-                        loc_x_arr,
-                        loc_y_arr,
-                        kThisAgentId,
-                        other_agent_id,
-                        kEnvId,
-                    )
-                    if dist < min_dist:
-                        min_dist = dist
-                        nearest_predator_id = other_agent_id
-        else:
-            rewards_arr[kEnvId, kThisAgentId] = kStarvingPenaltyForPredator
-
-        if min_dist < kDistanceMarginForReward:
-            # The prey is eaten
-            still_in_the_game_arr[kEnvId, kThisAgentId] = 0
-            num_preys_arr[kEnvId] -= 1
-            rewards_arr[kEnvId, kThisAgentId] = 0
-            for agent_id in range(kNumAgents):
-                if still_in_the_game_arr[kEnvId, agent_id]:
-                    is_predator = agent_types_arr[agent_id] == 1
+            if is_prey:
+                rewards_arr[kEnvId, kThisAgentId] = kSurvivingRewardForPrey
+                for other_agent_id in range(kNumAgents):
+                    
+                    #We compare distance with predators
+                    is_predator = agent_types_arr[other_agent_id] == 1
                     if is_predator:
-                        rewards_arr[kEnvId, agent_id] = kEatingRewardForPredator
-                    else:
-                        rewards_arr[kEnvId, agent_id] = kDeathPenaltyForPrey
-    
+                        dist = ComputeDistance(
+                            loc_x_arr,
+                            loc_y_arr,
+                            kThisAgentId,
+                            other_agent_id,
+                            kEnvId,
+                        )
+                        if dist < min_dist:
+                            min_dist = dist
+                            nearest_predator_id = other_agent_id
+            else:
+                rewards_arr[kEnvId, kThisAgentId] = kStarvingPenaltyForPredator
+
+            if min_dist < kEatingDistance:
+                # The prey is eaten
+                still_in_the_game_arr[kEnvId, kThisAgentId] = 0
+                num_preys_arr[kEnvId] -= 1
+                
+                # The reward changes
+                for agent_id in range(kNumAgents):
+                    if still_in_the_game_arr[kEnvId, agent_id]:
+                        is_predator = agent_types_arr[agent_id] == 1
+                        if is_predator:
+                            rewards_arr[kEnvId, agent_id] = kEatingRewardForPredator
+                        else:
+                            rewards_arr[kEnvId, agent_id] = kDeathPenaltyForPrey
+
 #        if env_timestep_arr[kEnvId] == kEpisodeLength:
 #            if num_preys_arr[kEnvId] < kNumAgents-num_predators_arr[kEnvId]:
 #                is_predator = agent_types_arr[kThisAgentId] == 1
@@ -369,6 +423,7 @@ def CudaCustomEnvComputeReward(
                    float32,  # kMaxTurn
                    float32,  # kMinTurn
                    int32[:, ::1],  # still_in_the_game_arr
+                   float32[:, :, ::1],  # obs_arr
                    boolean,  # kUseFullObservation
                    int32,  # kNumOtherAgentsObserved
                    float32[:, :, ::1], # neighbor_distances_arr
@@ -376,7 +431,6 @@ def CudaCustomEnvComputeReward(
                    int32[:, :, ::1], # nearest_neighbor_ids
                    float32,  # kMaxSeeingAngle
                    float32,  # kMaxSeeingDistance
-                   float32[:, :, ::1],  # obs_arr
                    int32[:, :, ::1],  # action_indices_arr
                    float32[:, ::1],  # edge_hit_reward_penalty_arr
                    float32[:, ::1],  # rewards_arr
@@ -389,7 +443,7 @@ def CudaCustomEnvComputeReward(
                    float32,  # kDeathPenaltyForPrey
                    float32,  # kEndOfGameReward
                    float32,  # kEndOfGamePenalty
-                   float32,  # kDistanceMarginForReward
+                   float32,  # kEatingDistance
                    int32[::1],  # done_arr
                    int32[::1],  # env_timestep_arr
                    int32,  # kNumAgents
@@ -411,6 +465,7 @@ def NumbaCustomEnvStep(
         kMaxTurn,
         kMinTurn,
         still_in_the_game_arr,
+        obs_arr,
         kUseFullObservation,
         kNumOtherAgentsObserved,
         neighbor_distances_arr,
@@ -418,7 +473,6 @@ def NumbaCustomEnvStep(
         nearest_neighbor_ids,
         kMaxSeeingAngle,
         kMaxSeeingDistance,
-        obs_arr,
         action_indices_arr,
         edge_hit_reward_penalty_arr,
         rewards_arr,
@@ -431,7 +485,7 @@ def NumbaCustomEnvStep(
         kDeathPenaltyForPrey,
         kEndOfGameReward,
         kEndOfGamePenalty,
-        kDistanceMarginForReward,
+        kEatingDistance,
         done_arr,
         env_timestep_arr,
         kNumAgents,
@@ -566,7 +620,7 @@ def NumbaCustomEnvStep(
         still_in_the_game_arr,
         done_arr,
         env_timestep_arr,
-        kDistanceMarginForReward,
+        kEatingDistance,
         kNumAgents,
         kEpisodeLength,
         kEnvId,
