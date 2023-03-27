@@ -374,15 +374,23 @@ def CudaCustomEnvComputeReward(
                 num_preys_arr[kEnvId] -= 1
                 
                 # The reward changes
-                for agent_id in range(kNumAgents):
-                    if still_in_the_game_arr[kEnvId, agent_id]:
-                        is_predator = agent_types_arr[agent_id] == 1
-                        if is_predator:
-                            rewards_arr[kEnvId, agent_id] = kEatingRewardForPredator
-                        else:
-                            rewards_arr[kEnvId, agent_id] = kDeathPenaltyForPrey
+                #for agent_id in range(kNumAgents):
+                #if still_in_the_game_arr[kEnvId, agent_id]:
+                #is_predator = agent_types_arr[agent_id] == 1
+                #if is_predator:
+                rewards_arr[kEnvId, nearest_predator_id] = kEatingRewardForPredator
+                #else:
+                rewards_arr[kEnvId, kThisAgentId] = kDeathPenaltyForPrey
 
-#        if env_timestep_arr[kEnvId] == kEpisodeLength:
+            # Add end of the game reward if useful
+            if env_timestep_arr[kEnvId] == kEpisodeLength:
+                rewards_arr[kEnvId, kThisAgentId] = kEndOfGameReward
+            
+            # Add the edge hit penalty and the step rewards / penalties
+            rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
+                kEnvId, kThisAgentId
+            ]
+                
 #            if num_preys_arr[kEnvId] < kNumAgents-num_predators_arr[kEnvId]:
 #                is_predator = agent_types_arr[kThisAgentId] == 1
 #                if is_predator:
@@ -395,11 +403,7 @@ def CudaCustomEnvComputeReward(
 #                else:
 #                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
 #                    
-        if still_in_the_game_arr[kEnvId, kThisAgentId]:
-            # Add the edge hit penalty and the step rewards / penalties
-            rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
-                kEnvId, kThisAgentId
-            ]
+
             
     numba_driver.syncthreads()
     
