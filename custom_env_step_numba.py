@@ -59,6 +59,7 @@ def ComputeAngle(
                    int32[:, :, ::1], # nearest_neighbor_ids
                    float32,  # kMaxSeeingAngle
                    float32,  # kMaxSeeingDistance
+                   boolean,  # kUseTimeInObservation
                    float32[:, :, ::1],  # obs_arr
                    int32[::1],  # env_timestep_arr
                    int32,  # kNumAgents
@@ -82,7 +83,8 @@ def CudaCustomEnvGenerateObservation(
         neighbor_ids_sorted_by_distance_arr,
         nearest_neighbor_ids,    
         kMaxSeeingAngle,
-        kMaxSeeingDistance,    
+        kMaxSeeingDistance,   
+        kUseTimeInObservation,
         obs_arr,
         env_timestep_arr,
         kNumAgents,
@@ -435,6 +437,7 @@ def CudaCustomEnvComputeReward(
                    int32[:, :, ::1], # nearest_neighbor_ids
                    float32,  # kMaxSeeingAngle
                    float32,  # kMaxSeeingDistance
+                   boolean,  # kUseTimeInObservation
                    int32[:, :, ::1],  # action_indices_arr
                    float32[:, ::1],  # edge_hit_reward_penalty_arr
                    float32[:, ::1],  # rewards_arr
@@ -477,6 +480,7 @@ def NumbaCustomEnvStep(
         nearest_neighbor_ids,
         kMaxSeeingAngle,
         kMaxSeeingDistance,
+        kUseTimeInObservation,
         action_indices_arr,
         edge_hit_reward_penalty_arr,
         rewards_arr,
@@ -594,7 +598,8 @@ def NumbaCustomEnvStep(
         neighbor_ids_sorted_by_distance_arr,
         nearest_neighbor_ids,    
         kMaxSeeingAngle,
-        kMaxSeeingDistance,        
+        kMaxSeeingDistance,     
+        kUseTimeInObservation,
         obs_arr,
         env_timestep_arr,
         kNumAgents,

@@ -48,6 +48,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  max_seeing_angle=None,
                  max_seeing_distance=None,
                  num_other_agents_observed = None,
+                 use_time_in_observation=True,
                  eating_distance=0.02,
                  seed=None,
                  env_backend="numba",
@@ -181,6 +182,8 @@ class CustomEnv(CUDAEnvironmentContext):
         self.max_seeing_angle = stage_size/np.sqrt(2) if max_seeing_angle is None else max_seeing_angle
         self.max_seeing_distance = np.pi if max_seeing_distance is None else max_seeing_distance
         
+        self.use_time_in_observation = use_time_in_observation
+        
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
 
@@ -188,9 +191,7 @@ class CustomEnv(CUDAEnvironmentContext):
         # If a predator is closer than this to a prey,
         # the predator eats the prey
         assert 0 <= eating_distance <= 1
-        self.eating_distance = (eating_distance * self.stage_size).astype(
-            self.float_dtype
-        )
+        self.eating_distance = (eating_distance * self.stage_size).astype(self.float_dtype)
 
         # REWARDS
         self.starving_penalty_for_predator = starving_penalty_for_predator
@@ -266,10 +267,12 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # Agent types
         agent_types = np.array([self.agent_type[agent_id] for agent_id in range(self.num_agents)])
-
         # Time to indicate that the agent is still in the game
         time = np.array([float(self.timestep) / self.episode_length])
 
+        if self.timestep != 0:
+            raise ValueError("This function should be call only for timestep 0.")
+            
         for agent_id in range(self.num_agents):
             if self.still_in_the_game[agent_id] and self.use_full_observation:
                 obs[agent_id] = np.concatenate(
@@ -393,7 +396,9 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
         )
         data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
         data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
+        data_dict.add_data(name="use_time_in_observation", data=self.use_time_in_observation)
 
+        
         # _OBSERVATIONS,
         # _ACTIONS,
         data_dict.add_data(
@@ -462,6 +467,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "nearest_neighbor_ids",
             "max_seeing_angle",
             "max_seeing_distance",
+            "use_time_in_observation",
             _ACTIONS,
             "edge_hit_reward_penalty",
             _REWARDS,

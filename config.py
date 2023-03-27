@@ -30,6 +30,7 @@ run_config  = dict(
         max_seeing_angle=2.5,
         max_seeing_distance=5,
         num_other_agents_observed = None,
+        use_time_in_observation=True,
         eating_distance=0.02,
         seed=None,
         env_backend="numba",
