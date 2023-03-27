@@ -158,7 +158,7 @@ class CustomEnv(CUDAEnvironmentContext):
         )
         # Add action 0 - this will be the no-op, or 0 turn
         self.turn_actions = np.insert(self.turn_actions, 0, 0).astype(self.float_dtype)
-
+        
         # These will be set during reset (see below)
         self.timestep = None
         self.global_state = None
@@ -239,87 +239,6 @@ class CustomEnv(CUDAEnvironmentContext):
 
             self.global_state[key][t] = value
 
-    def update_state(self, delta_accelerations, delta_turns):
-        """
-        Note: 'update_state' is only used when running on CPU step() only.
-        When using the CUDA step function, this Python method (update_state)
-        is part of the step() function!
-        The logic below mirrors (part of) the step function in CUDA.
-        """
-        loc_x_prev_t = self.global_state[_LOC_X][self.timestep - 1]
-        loc_y_prev_t = self.global_state[_LOC_Y][self.timestep - 1]
-        speed_prev_t = self.global_state[_SP][self.timestep - 1]
-        dir_prev_t = self.global_state[_DIR][self.timestep - 1]
-        acc_prev_t = self.global_state[_ACC][self.timestep - 1]
-
-        # Update direction and acceleration
-        # Do not update location if agent is out of the game !
-        dir_curr_t = (
-                (dir_prev_t + delta_turns) % (2 * np.pi) * self.still_in_the_game
-        ).astype(self.float_dtype)
-
-        acc_curr_t = acc_prev_t + delta_accelerations
-
-        # 0 <= speed <= max_speed (multiplied by the skill levels).
-        # Reset acceleration to 0 when speed is outside this range
-        max_speed = self.max_speed * np.array(self.skill_levels)
-        speed_curr_t = self.float_dtype(
-            np.clip(speed_prev_t + acc_curr_t, 0.0, max_speed) * self.still_in_the_game
-        )
-        acc_curr_t = acc_curr_t * (speed_curr_t > 0) * (speed_curr_t < max_speed)
-
-        loc_x_curr_t = self.float_dtype(
-            loc_x_prev_t + speed_curr_t * np.cos(dir_curr_t)
-        )
-        loc_y_curr_t = self.float_dtype(
-            loc_y_prev_t + speed_curr_t * np.sin(dir_curr_t)
-        )
-
-        # Crossing the edge
-        has_crossed_edge = ~(
-                (loc_x_curr_t >= 0)
-                & (loc_x_curr_t <= self.stage_size)
-                & (loc_y_curr_t >= 0)
-                & (loc_y_curr_t <= self.stage_size)
-        )
-
-        # Clip x and y if agent has crossed edge
-        clipped_loc_x_curr_t = self.float_dtype(
-            np.clip(loc_x_curr_t, 0.0, self.stage_size)
-        )
-
-        clipped_loc_y_curr_t = self.float_dtype(
-            np.clip(loc_y_curr_t, 0.0, self.stage_size)
-        )
-
-        # Penalize reward if agents hit the walls
-        self.edge_hit_reward_penalty = self.edge_hit_penalty * has_crossed_edge
-
-        # Set global states
-        self.set_global_state(key=_LOC_X, value=clipped_loc_x_curr_t, t=self.timestep)
-        self.set_global_state(key=_LOC_Y, value=clipped_loc_y_curr_t, t=self.timestep)
-        self.set_global_state(key=_SP, value=speed_curr_t, t=self.timestep)
-        self.set_global_state(key=_DIR, value=dir_curr_t, t=self.timestep)
-        self.set_global_state(key=_ACC, value=acc_curr_t, t=self.timestep)
-
-    def compute_distance(self, agent1, agent2):
-        """
-        Note: 'compute_distance' is only used when running on CPU step() only.
-        When using the CUDA step function, this Python method (compute_distance)
-        is also part of the step() function!
-        """
-        return np.sqrt(
-            (
-                    self.global_state[_LOC_X][self.timestep, agent1]
-                    - self.global_state[_LOC_X][self.timestep, agent2]
-            )
-            ** 2
-            + (
-                    self.global_state[_LOC_Y][self.timestep, agent1]
-                    - self.global_state[_LOC_Y][self.timestep, agent2]
-            )
-            ** 2
-        ).astype(self.float_dtype)
 
     def generate_observation(self):
         """
@@ -339,35 +258,19 @@ class CustomEnv(CUDAEnvironmentContext):
             (_DIR, 2 * np.pi),
         ]:
             if normalized_global_obs is None:
-                normalized_global_obs = (
-                        self.global_state[feature[0]][self.timestep] / feature[1]
-                )
+                normalized_global_obs = self.global_state[feature[0]][self.timestep] / feature[1]
             else:
                 normalized_global_obs = np.vstack(
-                    (
-                        normalized_global_obs,
-                        self.global_state[feature[0]][self.timestep] / feature[1],
-                    )
+                    (normalized_global_obs, self.global_state[feature[0]][self.timestep] / feature[1],)
                 )
 
         # Agent types
-        agent_types = np.array(
-            [self.agent_type[agent_id] for agent_id in range(self.num_agents)]
-        )
+        agent_types = np.array([self.agent_type[agent_id] for agent_id in range(self.num_agents)])
 
         # Time to indicate that the agent is still in the game
         time = np.array([float(self.timestep) / self.episode_length])
 
         for agent_id in range(self.num_agents):
-            # Set obs for agents still in the game
-            # obs = [global_obs, agent_types, still_in_the_game, is_visible, time]
-            # if self.use_full_observation:
-            #     is_visible = np.ones_like(self.num_agents).reshape(1, -1)
-            #     print("num_agents:", self.num_agents)
-            # else:
-            #     is_visible = np.array([self.compute_distance(agent_id, observed_agent_id) < self.max_seeing_distance for observed_agent_id in
-            #                            range(self.num_agents)])
-
             if self.still_in_the_game[agent_id] and self.use_full_observation:
                 obs[agent_id] = np.concatenate(
                     [
@@ -397,71 +300,6 @@ class CustomEnv(CUDAEnvironmentContext):
                 )
         return obs
 
-    def compute_reward(self):
-        """
-        Compute and return the rewards for each agent.
-        """
-        # Initialize rewards
-        rew = {agent_id: 0.0 for agent_id in range(self.num_agents)}
-
-        predators_list = sorted(self.predators)
-
-        # At least one prey present
-        if self.num_preys > 0:
-            preys_list = sorted(self.preys)
-            prey_locations_x = self.global_state[_LOC_X][self.timestep][preys_list]
-            predator_locations_x = self.global_state[_LOC_X][self.timestep][predators_list]
-
-            prey_locations_y = self.global_state[_LOC_Y][self.timestep][preys_list]
-            predator_locations_y = self.global_state[_LOC_Y][self.timestep][predators_list]
-
-            preys_to_predators_distances = np.sqrt(
-                (
-                        np.repeat(prey_locations_x, self.num_predators)
-                        - np.tile(predator_locations_x, self.num_preys)
-                )
-                ** 2
-                + (
-                        np.repeat(prey_locations_y, self.num_predators)
-                        - np.tile(predator_locations_y, self.num_preys)
-                )
-                ** 2
-            ).reshape(self.num_preys, self.num_predators)
-
-            min_preys_to_predators_distances = np.min(
-                preys_to_predators_distances, axis=1
-            )
-            argmin_preys_to_predators_distances = np.argmin(
-                preys_to_predators_distances, axis=1
-            )
-            nearest_predator_ids = [
-                predators_list[idx] for idx in argmin_preys_to_predators_distances
-            ]
-
-        # Rewards
-        # Add edge hit reward penalty and the step rewards/ penalties
-        for agent_id in range(self.num_agents):
-            if self.still_in_the_game[agent_id]:
-                rew[agent_id] += self.edge_hit_reward_penalty[agent_id]
-                rew[agent_id] += self.step_rewards[agent_id]
-
-        for idx, prey_id in enumerate(preys_list):
-            if min_preys_to_predators_distances[idx] < self.eating_distance:
-                # the prey is eaten!
-                rew[prey_id] += self.tag_penalty_for_prey
-                rew[nearest_predator_ids[idx]] += self.tag_reward_for_predator
-
-                # Remove prey from game
-                self.still_in_the_game[prey_id] = 0
-                del self.preys[prey_id]
-                self.num_preys -= 1
-                self.global_state[_SIG][self.timestep:, prey_id] = 0
-
-        if self.timestep == self.episode_length:
-            for prey_id in self.preys:
-                rew[prey_id] += self.end_of_game_reward_for_prey
-
-        return rew
 
     def reset(self):
         """
@@ -472,26 +310,16 @@ class CustomEnv(CUDAEnvironmentContext):
 
         # Re-initialize the global state
         self.global_state = {}
-        self.set_global_state(
-            key=_LOC_X, value=self.starting_location_x, t=self.timestep
-        )
-        self.set_global_state(
-            key=_LOC_Y, value=self.starting_location_y, t=self.timestep
-        )
+        self.set_global_state(key=_LOC_X, value=self.starting_location_x, t=self.timestep)
+        self.set_global_state(key=_LOC_Y, value=self.starting_location_y, t=self.timestep)
         self.set_global_state(key=_SP, value=self.starting_speeds, t=self.timestep)
         self.set_global_state(key=_DIR, value=self.starting_directions, t=self.timestep)
-        self.set_global_state(
-            key=_ACC, value=self.starting_accelerations, t=self.timestep
-        )
-
+        self.set_global_state(key=_ACC, value=self.starting_accelerations, t=self.timestep)
         # Array to keep track of the agents that are still in play
         self.still_in_the_game = np.ones(self.num_agents, dtype=self.int_dtype)
-        # print("still in the game:", self.still_in_the_game.shape)
 
         # Initialize global state for "still_in_the_game" to all ones
-        self.global_state[_SIG] = np.ones(
-            (self.episode_length + 1, self.num_agents), dtype=self.int_dtype
-        )
+        self.global_state[_SIG] = np.ones((self.episode_length + 1, self.num_agents), dtype=self.int_dtype)
 
         # Penalty for hitting the edges
         self.edge_hit_reward_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
@@ -501,45 +329,6 @@ class CustomEnv(CUDAEnvironmentContext):
         self.num_preys = len(self.preys)
 
         return self.generate_observation()
-
-    def step(self, actions=None):
-        """
-        Env step() - The CPU version
-        """
-        self.timestep += 1
-
-        assert isinstance(actions, dict)
-        assert len(actions) == self.num_agents
-
-        acceleration_action_ids = [
-            actions[agent_id][0] for agent_id in range(self.num_agents)
-        ]
-        turn_action_ids = [
-            actions[agent_id][1] for agent_id in range(self.num_agents)
-        ]
-
-        assert all(
-            0 <= acc <= self.num_acceleration_levels
-            for acc in acceleration_action_ids
-        )
-        assert all(0 <= turn <= self.num_turn_levels for turn in turn_action_ids)
-
-        delta_accelerations = self.acceleration_actions[acceleration_action_ids]
-        delta_turns = self.turn_actions[turn_action_ids]
-
-        # Update state and generate observation
-        self.update_state(delta_accelerations, delta_turns)
-        obs = self.generate_observation()
-
-        # Compute rewards and done
-        rew = self.compute_reward()
-        done = {
-            "__all__": (self.timestep >= self.episode_length)
-                       or (self.num_preys == 0)
-        }
-        info = {}
-
-        return obs, rew, done, info
 
 
 class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
