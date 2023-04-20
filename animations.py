@@ -81,7 +81,7 @@ def generate_animation(
                 [],
                 color=tagger_color,
                 marker="o",
-                markersize=10,
+                markersize=8,
             )
         else:  # preys
             lines[idx], = ax.plot3D(
@@ -90,7 +90,7 @@ def generate_animation(
                 [],
                 color=runner_color,
                 marker="o",
-                markersize=5,
+                markersize=4,
             )
 
     labels=[None, None]
