@@ -33,20 +33,78 @@ def ComputeDistance(
                   device=True,
                   inline=True)
 def ComputeAngle(
-        loc_x_arr, loc_y_arr, direction_arr, kThisAgentId1, kThisAgentId2, kEnvId
+        loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId1, kThisAgentId2, kEnvId
 ):
     return math.degrees(
         math.atan2(
             loc_y_arr[kEnvId, kThisAgentId1] - loc_y_arr[kEnvId, kThisAgentId2], 
             loc_x_arr[kEnvId, kThisAgentId1] - loc_x_arr[kEnvId, kThisAgentId2]
-        ) - direction_arr[kEnvId, kThisAgentId1]
+        ) - orientation_arr[kEnvId, kThisAgentId1]
     )
+
+# Device helper function to compute angle between two agents
+@numba_driver.jit((float32[:, :, ::1],
+                   int32,
+                   int32,
+                   int32,
+                   int32,
+                   int32,
+                   float32[:, ::1],
+                   float32[:, ::1],
+                   int32,
+                   float32[:, ::1],
+                   int32,
+                   float32[:, ::1],
+                   boolean,
+                  ),
+                  device=True,
+                  inline=True)
+def UpdateObservation(
+    obs_arr,
+    kEnvId, 
+    kThisAgentId, 
+    kNumAgents, 
+    index, 
+    other_agent_id, 
+    loc_x_arr,
+    loc_y_arr,
+    kStageSize,
+    speed_arr,
+    kMaxSpeed,
+    orientation_arr,
+    kUsePolarCoordinate,
+):
+    # update relative normalized speed of the other agent
+    obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = float(
+        speed_arr[kEnvId, other_agent_id] - speed_arr[kEnvId, kThisAgentId]
+    ) / (kMaxSpeed + kEpsilon)
+    # update relative normalized orientation of the other agent
+    obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = float(
+        orientation_arr[kEnvId, other_agent_id] - orientation_arr[kEnvId, kThisAgentId]
+    ) / kTwoPi
+    if kUsePolarCoordinate: 
+        ditance = ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)
+        angle = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId)
+        # update relative distance of the other agent
+        obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = ditance / (math.sqrt(2.0) * kStageSize)
+        # update relative direction of the other agent
+        obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = angle / kTwoPi
+    else:
+        # update relative normalized pos_x of the other agent
+        obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = float(
+            loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
+        ) / (math.sqrt(2.0) * kStageSize)
+        # update relative normalized pos_y of the other agent
+        obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = float(
+            loc_y_arr[kEnvId, other_agent_id] - loc_y_arr[kEnvId, kThisAgentId]
+        ) / (math.sqrt(2.0) * kStageSize)
+    return obs_arr
 
 # Device helper function to generate observation
 @numba_driver.jit((float32[:, ::1],  # loc_x_arr
                    float32[:, ::1],  # loc_y_arr
                    float32[:, ::1],  # speed_arr
-                   float32[:, ::1],  # direction_arr
+                   float32[:, ::1],  # orientation_arr
                    float32[:, ::1],  # acceleration_arr
                    int32[::1],  # agent_types_arr
                    float32,  # kStageSize
@@ -60,6 +118,7 @@ def ComputeAngle(
                    float32,  # kMaxSeeingAngle
                    float32,  # kMaxSeeingDistance
                    boolean,  # kUseTimeInObservation
+                   boolean,  # kUsePolarCoordinate
                    float32[:, :, ::1],  # obs_arr
                    int32[::1],  # env_timestep_arr
                    int32,  # kNumAgents
@@ -71,7 +130,7 @@ def CudaCustomEnvGenerateObservation(
         loc_x_arr,
         loc_y_arr,
         speed_arr,
-        direction_arr,
+        orientation_arr,
         acceleration_arr,
         agent_types_arr,
         kStageSize,
@@ -85,6 +144,7 @@ def CudaCustomEnvGenerateObservation(
         kMaxSeeingAngle,
         kMaxSeeingDistance,   
         kUseTimeInObservation,
+        kUsePolarCoordinate,
         obs_arr,
         env_timestep_arr,
         kNumAgents,
@@ -92,8 +152,8 @@ def CudaCustomEnvGenerateObservation(
         kEnvId,
         kThisAgentId,
 ):
-    # for each agent, we have 7 features that we can observe
-    num_features = 7
+    # for each agent, we have 6 features that we can observe
+    num_features = 6
 
     if kThisAgentId < kNumAgents:
 
@@ -104,16 +164,16 @@ def CudaCustomEnvGenerateObservation(
             # Initialize obs of other agents to 0 physics variable and to agent type and still in the game
             for other_agent_id in range(kNumAgents):
                 if not other_agent_id == kThisAgentId:
-                    obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = 0.0 # futur position of loc_x
-                    obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = 0.0
+                    obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = agent_types_arr[other_agent_id]
+                    obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = still_in_the_game_arr[kEnvId, other_agent_id]
                     obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = 0.0
                     obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = 0.0
                     obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = 0.0
-                    obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = agent_types_arr[other_agent_id]
-                    obs_arr[kEnvId, kThisAgentId, 6 * (kNumAgents - 1) + index] = still_in_the_game_arr[kEnvId, other_agent_id]
+                    obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = 0.0
                     index += 1
 
-            obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = 0.0
+            if kUseTimeInObservation:
+                obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = 0.0
                 
             # Update obs for agents still in the game
             if still_in_the_game_arr[kEnvId, kThisAgentId]:
@@ -121,35 +181,29 @@ def CudaCustomEnvGenerateObservation(
                 # Update obs of other agents
                 for other_agent_id in range(kNumAgents):
                     if not other_agent_id == kThisAgentId:
-                        ditance = ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)
-                        angle = ComputeAngle(loc_x_arr, loc_y_arr, direction_arr, kThisAgentId, other_agent_id, kEnvId)
-                        # if ditance<kMaxSeeingDistance and angle<kMaxSeeingAngle:
-                        # update relative normalized pos_x of the other agent
-                        obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
-                            loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
-                        ) / (math.sqrt(2.0) * kStageSize)
-                        # update relative normalized pos_y of the other agent
-                        obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = float(
-                            loc_y_arr[kEnvId, other_agent_id] - loc_y_arr[kEnvId, kThisAgentId]
-                        ) / (math.sqrt(2.0) * kStageSize)
-                        # update relative normalized speed of the other agent
-                        obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = float(
-                            speed_arr[kEnvId, other_agent_id] - speed_arr[kEnvId, kThisAgentId]
-                        ) / (kMaxSpeed + kEpsilon)
-                        # update relative normalized acceleration of the other agent
-                        obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = float(
-                            acceleration_arr[kEnvId, other_agent_id] - acceleration_arr[kEnvId, kThisAgentId]
-                        ) / (kMaxSpeed + kEpsilon)
-                        # update relative normalized direction of the other agent
-                        obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = float(
-                            direction_arr[kEnvId, other_agent_id] - direction_arr[kEnvId, kThisAgentId]
-                        ) / kTwoPi
+                        obs_arr = UpdateObservation(
+                            obs_arr,
+                            kEnvId, 
+                            kThisAgentId, 
+                            kNumAgents, 
+                            index, 
+                            other_agent_id, 
+                            loc_x_arr,
+                            loc_y_arr,
+                            kStageSize,
+                            speed_arr,
+                            kMaxSpeed,
+                            orientation_arr,
+                            kUsePolarCoordinate,
+                        )
                         index += 1
+                        
+                if kUseTimeInObservation:
+                    # add the time remaining in the episode as the last feature
+                    obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
+                            float(env_timestep_arr[kEnvId]) / kEpisodeLength
+                    )
 
-                # add the time remaining in the episode as the last feature
-                obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
-                        float(env_timestep_arr[kEnvId]) / kEpisodeLength
-                )
         # BASED ON NUMBER 
         elif kNumOtherAgentsObserved<kNumAgents:
             # Initialize obs to all zeros
@@ -160,9 +214,9 @@ def CudaCustomEnvGenerateObservation(
                 obs_arr[kEnvId, kThisAgentId, 3 * kNumOtherAgentsObserved + idx] = 0.0
                 obs_arr[kEnvId, kThisAgentId, 4 * kNumOtherAgentsObserved + idx] = 0.0
                 obs_arr[kEnvId, kThisAgentId, 5 * kNumOtherAgentsObserved + idx] = 0.0
-                obs_arr[kEnvId, kThisAgentId, 6 * kNumOtherAgentsObserved + idx] = 0.0
-
-            obs_arr[kEnvId, kThisAgentId, num_features * kNumOtherAgentsObserved] = 0.0
+            
+            if kUseTimeInObservation:
+                obs_arr[kEnvId, kThisAgentId, num_features * kNumOtherAgentsObserved] = 0.0
 
             # Update obs for agents still in the game
             if still_in_the_game_arr[kEnvId, kThisAgentId]:
@@ -210,33 +264,27 @@ def CudaCustomEnvGenerateObservation(
                 # Update observation
                 for idx in range(min(num_valid_other_agents, kNumOtherAgentsObserved)):
                     kOtherAgentId = nearest_neighbor_ids[kEnvId, kThisAgentId, idx]
-
-
-                # Update observation
-                for idx in range(min(num_valid_other_agents, kNumOtherAgentsObserved)):
-                    kOtherAgentId = nearest_neighbor_ids[kEnvId, kThisAgentId, idx]
-
-                    obs_arr[kEnvId, kThisAgentId, 0 * kNumOtherAgentsObserved + idx] = float(
-                        loc_x_arr[kEnvId, kOtherAgentId] - loc_x_arr[kEnvId, kThisAgentId]
-                    ) / (math.sqrt(2.0) * kStageSize)
-                    obs_arr[kEnvId, kThisAgentId, 1 * kNumOtherAgentsObserved + idx] = float(
-                        loc_y_arr[kEnvId, kOtherAgentId] - loc_y_arr[kEnvId, kThisAgentId]
-                    ) / (math.sqrt(2.0) * kStageSize)
-                    obs_arr[kEnvId, kThisAgentId, 2 * kNumOtherAgentsObserved + idx] = float(
-                        speed_arr[kEnvId, kOtherAgentId] - speed_arr[kEnvId, kThisAgentId]
-                    ) / (kMaxSpeed + kEpsilon)
-                    obs_arr[kEnvId, kThisAgentId, 3 * kNumOtherAgentsObserved + idx] = float(
-                        acceleration_arr[kEnvId, kOtherAgentId] - acceleration_arr[kEnvId, kThisAgentId]
-                    ) / (kMaxSpeed + kEpsilon)
-                    obs_arr[kEnvId, kThisAgentId, 4 * kNumOtherAgentsObserved + idx] = float(
-                            direction_arr[kEnvId, kOtherAgentId]
-                            - direction_arr[kEnvId, kThisAgentId]
-                    ) / kTwoPi
-
-                    obs_arr[kEnvId, kThisAgentId, 5 * kNumOtherAgentsObserved + idx] = agent_types_arr[kOtherAgentId]
-                    obs_arr[kEnvId, kThisAgentId, 6 * kNumOtherAgentsObserved + idx] = still_in_the_game_arr[kEnvId, kOtherAgentId]
-
-                obs_arr[kEnvId, kThisAgentId, num_features * kNumOtherAgentsObserved] = (float(env_timestep_arr[kEnvId]) / kEpisodeLength)
+                    obs_arr[kEnvId, kThisAgentId, 0 * kNumOtherAgentsObserved + idx] = agent_types_arr[kOtherAgentId]
+                    obs_arr[kEnvId, kThisAgentId, 1 * kNumOtherAgentsObserved + idx] = still_in_the_game_arr[kEnvId, kOtherAgentId]
+                    obs_arr = UpdateObservation(
+                        obs_arr,
+                        kEnvId, 
+                        kThisAgentId, 
+                        kNumAgents, 
+                        index, 
+                        other_agent_id, 
+                        loc_x_arr,
+                        loc_y_arr,
+                        kStageSize,
+                        speed_arr,
+                        kMaxSpeed,
+                        orientation_arr,
+                        kUsePolarCoordinate,
+                    )
+                if kUseTimeInObservation:
+                    obs_arr[kEnvId, kThisAgentId, num_features * kNumOtherAgentsObserved] = (
+                        float(env_timestep_arr[kEnvId]) / kEpisodeLength
+                    )
                   
         # BASED ON DISTANCE 
         else:
@@ -245,16 +293,15 @@ def CudaCustomEnvGenerateObservation(
             # Initialize obs of other agents to 0 physics variable and to agent type and still in the game
             for other_agent_id in range(kNumAgents):
                 if not other_agent_id == kThisAgentId:
-                    obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = 0.0 # futur position of loc_x
-                    obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = 0.0
+                    obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = agent_types_arr[other_agent_id]
+                    obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = still_in_the_game_arr[kEnvId, other_agent_id]
                     obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = 0.0
                     obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = 0.0
                     obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = 0.0
-                    obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = agent_types_arr[other_agent_id]
-                    obs_arr[kEnvId, kThisAgentId, 6 * (kNumAgents - 1) + index] = still_in_the_game_arr[kEnvId, other_agent_id]
+                    obs_arr[kEnvId, kThisAgentId, 5 * (kNumAgents - 1) + index] = 0.0
                     index += 1
-
-            obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = 0.0
+            if kUseTimeInObservation:
+                obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = 0.0
                 
             # Update obs for agents still in the game
             if still_in_the_game_arr[kEnvId, kThisAgentId]:
@@ -263,34 +310,30 @@ def CudaCustomEnvGenerateObservation(
                 for other_agent_id in range(kNumAgents):
                     if not other_agent_id == kThisAgentId:
                         ditance = ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)
-                        angle = ComputeAngle(loc_x_arr, loc_y_arr, direction_arr, kThisAgentId, other_agent_id, kEnvId)
+                        angle = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId)
                         if ditance<kMaxSeeingDistance and angle<kMaxSeeingAngle:
-                            # update relative normalized pos_x of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 0 * (kNumAgents - 1) + index] = float(
-                                loc_x_arr[kEnvId, other_agent_id] - loc_x_arr[kEnvId, kThisAgentId]
-                            ) / (math.sqrt(2.0) * kStageSize)
-                            # update relative normalized pos_y of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 1 * (kNumAgents - 1) + index] = float(
-                                loc_y_arr[kEnvId, other_agent_id] - loc_y_arr[kEnvId, kThisAgentId]
-                            ) / (math.sqrt(2.0) * kStageSize)
-                            # update relative normalized speed of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 2 * (kNumAgents - 1) + index] = float(
-                                speed_arr[kEnvId, other_agent_id] - speed_arr[kEnvId, kThisAgentId]
-                            ) / (kMaxSpeed + kEpsilon)
-                            # update relative normalized acceleration of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 3 * (kNumAgents - 1) + index] = float(
-                                acceleration_arr[kEnvId, other_agent_id] - acceleration_arr[kEnvId, kThisAgentId]
-                            ) / (kMaxSpeed + kEpsilon)
-                            # update relative normalized direction of the other agent
-                            obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = float(
-                                direction_arr[kEnvId, other_agent_id] - direction_arr[kEnvId, kThisAgentId]
-                            ) / kTwoPi
+                            obs_arr = UpdateObservation(
+                                obs_arr,
+                                kEnvId, 
+                                kThisAgentId, 
+                                kNumAgents, 
+                                index, 
+                                other_agent_id, 
+                                loc_x_arr,
+                                loc_y_arr,
+                                kStageSize,
+                                speed_arr,
+                                kMaxSpeed,
+                                orientation_arr,
+                                kUsePolarCoordinate,
+                            )
                             index += 1
 
                 # add the time remaining in the episode as the last feature
-                obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
-                        float(env_timestep_arr[kEnvId]) / kEpisodeLength
-                )
+                if kUseTimeInObservation:
+                    obs_arr[kEnvId, kThisAgentId, num_features * (kNumAgents - 1)] = (
+                            float(env_timestep_arr[kEnvId]) / kEpisodeLength
+                    )
 
 # Device helper function to compute rewards
 @numba_driver.jit((float32[:, ::1],  # rewards_arr
@@ -416,7 +459,7 @@ def CudaCustomEnvComputeReward(
 @numba_driver.jit((float32[:, ::1],  # loc_x_arr
                    float32[:, ::1],  # loc_y_arr
                    float32[:, ::1],  # speed_arr
-                   float32[:, ::1],  # direction_arr
+                   float32[:, ::1],  # orientation_arr
                    float32[:, ::1],  # acceleration_arr
                    int32[::1],  # agent_types_arr
                    float32,  # kStageSize
@@ -438,6 +481,7 @@ def CudaCustomEnvComputeReward(
                    float32,  # kMaxSeeingAngle
                    float32,  # kMaxSeeingDistance
                    boolean,  # kUseTimeInObservation
+                   boolean,  # kUsePolarCoordinate
                    int32[:, :, ::1],  # action_indices_arr
                    float32[:, ::1],  # edge_hit_reward_penalty_arr
                    float32[:, ::1],  # rewards_arr
@@ -459,7 +503,7 @@ def NumbaCustomEnvStep(
         loc_x_arr,
         loc_y_arr,
         speed_arr,
-        direction_arr,
+        orientation_arr,
         acceleration_arr,
         agent_types_arr,
         kStageSize,
@@ -481,6 +525,7 @@ def NumbaCustomEnvStep(
         kMaxSeeingAngle,
         kMaxSeeingDistance,
         kUseTimeInObservation,
+        kUsePolarCoordinate,
         action_indices_arr,
         edge_hit_reward_penalty_arr,
         rewards_arr,
@@ -523,13 +568,13 @@ def NumbaCustomEnvStep(
 
         # Update the agent's acceleration and directions
         acceleration_arr[kEnvId, kThisAgentId] += delta_acceleration
-        direction_arr[kEnvId, kThisAgentId] = ((direction_arr[kEnvId, kThisAgentId] + delta_turn) % kTwoPi) * still_in_the_game_arr[
+        orientation_arr[kEnvId, kThisAgentId] = ((orientation_arr[kEnvId, kThisAgentId] + delta_turn) % kTwoPi) * still_in_the_game_arr[
             kEnvId, kThisAgentId]
 
         # Direction is kept in [0, 2pi]
-        if direction_arr[kEnvId, kThisAgentId] < 0:
-            direction_arr[kEnvId, kThisAgentId] = (
-                    kTwoPi + direction_arr[kEnvId, kThisAgentId]
+        if orientation_arr[kEnvId, kThisAgentId] < 0:
+            orientation_arr[kEnvId, kThisAgentId] = (
+                    kTwoPi + orientation_arr[kEnvId, kThisAgentId]
             )
 
         # Speed clipping
@@ -545,10 +590,10 @@ def NumbaCustomEnvStep(
 
         # Update the agent's location
         loc_x_arr[kEnvId, kThisAgentId] += speed_arr[kEnvId, kThisAgentId] * math.cos(
-            direction_arr[kEnvId, kThisAgentId]
+            orientation_arr[kEnvId, kThisAgentId]
         )
         loc_y_arr[kEnvId, kThisAgentId] += speed_arr[kEnvId, kThisAgentId] * math.sin(
-            direction_arr[kEnvId, kThisAgentId]
+            orientation_arr[kEnvId, kThisAgentId]
         )
 
         # Check if the agent has crossed the edge
@@ -586,7 +631,7 @@ def NumbaCustomEnvStep(
         loc_x_arr,
         loc_y_arr,
         speed_arr,
-        direction_arr,
+        orientation_arr,
         acceleration_arr,
         agent_types_arr,
         kStageSize,
@@ -600,6 +645,7 @@ def NumbaCustomEnvStep(
         kMaxSeeingAngle,
         kMaxSeeingDistance,     
         kUseTimeInObservation,
+        kUsePolarCoordinate,
         obs_arr,
         env_timestep_arr,
         kNumAgents,

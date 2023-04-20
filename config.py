@@ -11,27 +11,33 @@ run_config  = dict(
         stage_size=20,
         episode_length=500,
         preparation_length=120,
-        min_speed=0,
-        max_speed=0.5,
-        max_acceleration=0.1,
-        min_acceleration=-0.1,
-        max_turn= 2.35,  # 3*pi/4 radians
-        min_turn=- 2.35,  # 3*pi/4 radians
-        num_acceleration_levels=5,
-        num_turn_levels=20,
-        starving_penalty_for_predator=0,
-        eating_reward_for_predator=10.0,
-        surviving_reward_for_prey=0,
-        death_penalty_for_prey=-10.0,
-        edge_hit_penalty=-0.5,
-        end_of_game_penalty=-10,
-        end_of_game_reward=1,
-        use_full_observation=False,
-        max_seeing_angle=2.5,
-        max_seeing_distance=5,
-        num_other_agents_observed = None,
-        use_time_in_observation=True,
+        # Physics
+        use_physics = False,
         eating_distance=0.02,
+        # Action parameters
+        min_speed=0.05,
+        max_speed=0.2,
+        max_acceleration=0.2,
+        min_acceleration=-0.2,
+        max_turn= np.pi/2,  # pi radians
+        min_turn=- np.pi/2,  # pi radians
+        num_acceleration_levels=5,
+        num_turn_levels=6,
+        # Reward parameters
+        starving_penalty_for_predator=-0.1,
+        eating_reward_for_predator=100.0,
+        surviving_reward_for_prey=0.1,
+        death_penalty_for_prey=-100.0,
+        edge_hit_penalty=-0.0,
+        end_of_game_penalty=-0,
+        end_of_game_reward=0,
+        # Observation parameters
+        use_full_observation=True, # Put False if not used
+        max_seeing_angle=None,  # Put None if not used
+        max_seeing_distance=None,  # Put None if not used
+        num_other_agents_observed = None,  # Put None if not used
+        use_time_in_observation=False,
+        use_polar_coordinate=True,
         seed=None,
         env_backend="numba",
     ),
@@ -39,32 +45,32 @@ run_config  = dict(
     # Trainer settings
     trainer=dict(
         num_envs= 400, # number of environment replicas
-        train_batch_size= 10000, # total batch size used for training per iteration (across all the environments)
-        num_episodes= 1000, # number of episodes to run the training for (can be arbitrarily high)
+        train_batch_size= 1000, # total batch size used for training per iteration (across all the environments)
+        num_episodes= 100000, # number of episodes to run the training for (can be arbitrarily high)
     ),
     # Policy network settings
     policy=dict( # list all the policies below
         prey=dict(
             to_train= True, # flag indicating whether the model needs to be trained
-            algorithm= "A2C", # algorithm used to train the policy
+            algorithm= "PPO", # algorithm used to train the policy
             gamma= 0.98, # discount rate gamms
-            lr= 0.005, # learning rate
+            lr= 0.001, # learning rate
             vf_loss_coeff= 1, # loss coefficient for the value function loss
             entropy_coeff= [[0, 0.5], [2000000, 0.05]], # entropy coefficient (can be a list of lists)
             model=dict( # policy model settings
-                type= "predator_policy",
-                fc_dims= [256, 256], # dimension(s) of the fully connected layers as a list
+                type= "prey_policy",
+                fc_dims= [64, 64, 64], # dimension(s) of the fully connected layers as a list
                 model_ckpt_filepath= "", # filepath (used to restore a previously saved model)
             ),
         ),
         predator=dict(
             to_train= True,
-            algorithm= "A2C",
+            algorithm= "PPO",
             gamma= 0.98,
-            lr= 0.002,
+            lr= 0.001,
             vf_loss_coeff= 1,
             model=dict(
-                type= "fully_connected",
+                type= "predator_policy",
                 fc_dims= [256, 256],
                 model_ckpt_filepath= "",
             )
@@ -74,7 +80,7 @@ run_config  = dict(
     # Checkpoint saving setting
     saving=dict(
             metrics_log_freq= 100, # how often (in iterations) to print the metrics
-            model_params_save_freq= 5000, # how often (in iterations) to save the model parameters
+            model_params_save_freq= 50000, # how often (in iterations) to save the model parameters
             basedir= "/tmp", # base folder used for saving
             name= "collective_v0",
             tag= "50preys_1predator",

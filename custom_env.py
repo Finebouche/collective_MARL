@@ -13,7 +13,7 @@ _REWARDS = Constants.REWARDS
 _LOC_X = "loc_x"
 _LOC_Y = "loc_y"
 _SP = "speed"
-_DIR = "direction"
+_ORI = "orientation"
 _ACC = "acceleration"
 _SIG = "still_in_the_game"
 _DONE = "done"
@@ -29,6 +29,8 @@ class CustomEnv(CUDAEnvironmentContext):
                  preparation_length=120,
                  starting_location_x=None,
                  starting_location_y=None,
+                 use_physics = False,
+                 eating_distance=0.02,
                  min_speed=0.2,
                  max_speed=0.5,
                  max_acceleration=0.5,
@@ -49,7 +51,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  max_seeing_distance=None,
                  num_other_agents_observed = None,
                  use_time_in_observation=True,
-                 eating_distance=0.02,
+                 use_polar_coordinate=False,
                  seed=None,
                  env_backend="numba",
                  ):
@@ -183,6 +185,7 @@ class CustomEnv(CUDAEnvironmentContext):
         self.max_seeing_distance = np.pi if max_seeing_distance is None else max_seeing_distance
         
         self.use_time_in_observation = use_time_in_observation
+        self.use_polar_coordinate = use_polar_coordinate
         
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
@@ -252,11 +255,11 @@ class CustomEnv(CUDAEnvironmentContext):
         # Global states is a dictionary of numpy arrays
         # Each key is a feature, and each value is a numpy array of shape (episode_length, num_agents)
         for feature in [
+            (_SP, self.max_speed + self.eps),
+            (_ORI, 2 * np.pi),
+            (_ACC, self.max_speed + self.eps),
             (_LOC_X, self.grid_diagonal),
             (_LOC_Y, self.grid_diagonal),
-            (_SP, self.max_speed + self.eps),
-            (_ACC, self.max_speed + self.eps),
-            (_DIR, 2 * np.pi),
         ]:
             if normalized_global_obs is None:
                 normalized_global_obs = self.global_state[feature[0]][self.timestep] / feature[1]
@@ -310,20 +313,21 @@ class CustomEnv(CUDAEnvironmentContext):
         """
         # Reset time to the beginning
         self.timestep = 0
-
+        
         # Re-initialize the global state
         self.global_state = {}
-        self.set_global_state(key=_LOC_X, value=self.starting_location_x, t=self.timestep)
-        self.set_global_state(key=_LOC_Y, value=self.starting_location_y, t=self.timestep)
-        self.set_global_state(key=_SP, value=self.starting_speeds, t=self.timestep)
-        self.set_global_state(key=_DIR, value=self.starting_directions, t=self.timestep)
-        self.set_global_state(key=_ACC, value=self.starting_accelerations, t=self.timestep)
+        
         # Array to keep track of the agents that are still in play
         self.still_in_the_game = np.ones(self.num_agents, dtype=self.int_dtype)
 
         # Initialize global state for "still_in_the_game" to all ones
         self.global_state[_SIG] = np.ones((self.episode_length + 1, self.num_agents), dtype=self.int_dtype)
-
+        self.set_global_state(key=_SP, value=self.starting_speeds, t=self.timestep)
+        self.set_global_state(key=_ORI, value=self.starting_directions, t=self.timestep)
+        self.set_global_state(key=_ACC, value=self.starting_directions, t=self.timestep)
+        self.set_global_state(key=_LOC_X, value=self.starting_location_x, t=self.timestep)
+        self.set_global_state(key=_LOC_Y, value=self.starting_location_y, t=self.timestep)        
+        
         # Penalty for hitting the edges
         self.edge_hit_reward_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
 
@@ -346,7 +350,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
         Create a dictionary of data to push to the device
         """
         data_dict = DataFeed()
-        for feature in [_LOC_X, _LOC_Y, _SP, _DIR, _ACC]:
+        for feature in [_LOC_X, _LOC_Y, _SP, _ORI, _ACC]:
             data_dict.add_data(
                 name=feature,
                 data=self.global_state[feature][0],
@@ -397,6 +401,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
         data_dict.add_data(name="max_seeing_angle", data=self.max_seeing_angle)
         data_dict.add_data(name="max_seeing_distance", data=self.max_seeing_distance)
         data_dict.add_data(name="use_time_in_observation", data=self.use_time_in_observation)
+        data_dict.add_data(name="use_polar_coordinate", data=self.use_polar_coordinate)
 
         
         # _OBSERVATIONS,
@@ -446,7 +451,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             _LOC_X,
             _LOC_Y,
             _SP,
-            _DIR,
+            _ORI,
             _ACC,
             "agent_types",
             "stage_size",
@@ -468,6 +473,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "max_seeing_angle",
             "max_seeing_distance",
             "use_time_in_observation",
+            "use_polar_coordinate",
             _ACTIONS,
             "edge_hit_reward_penalty",
             _REWARDS,
