@@ -12,13 +12,13 @@ run_config  = dict(
         episode_length=500,
         preparation_length=120,
         # Physics
-        use_physics = False,
+        draging_force_coefficient = 0.5,
         eating_distance=0.02,
         # Action parameters
-        min_speed=0.05,
-        max_speed=0.2,
-        max_acceleration=0.2,
-        min_acceleration=-0.2,
+        min_speed=0,
+        max_speed=10,
+        max_acceleration=0.1,
+        min_acceleration=0,
         max_turn= np.pi/2,  # pi radians
         min_turn=- np.pi/2,  # pi radians
         num_acceleration_levels=5,
@@ -32,9 +32,9 @@ run_config  = dict(
         end_of_game_penalty=-0,
         end_of_game_reward=0,
         # Observation parameters
-        use_full_observation=True, # Put False if not used
-        max_seeing_angle=None,  # Put None if not used
-        max_seeing_distance=None,  # Put None if not used
+        use_full_observation=False, # Put False if not used
+        max_seeing_angle= 3*np.pi/2,  # Put None if not used
+        max_seeing_distance=6,  # Put None if not used
         num_other_agents_observed = None,  # Put None if not used
         use_time_in_observation=False,
         use_polar_coordinate=True,
@@ -46,7 +46,7 @@ run_config  = dict(
     trainer=dict(
         num_envs= 400, # number of environment replicas
         train_batch_size= 1000, # total batch size used for training per iteration (across all the environments)
-        num_episodes= 100000, # number of episodes to run the training for (can be arbitrarily high)
+        num_episodes= 1000, # number of episodes to run the training for (can be arbitrarily high)
     ),
     # Policy network settings
     policy=dict( # list all the policies below
@@ -69,9 +69,10 @@ run_config  = dict(
             gamma= 0.98,
             lr= 0.001,
             vf_loss_coeff= 1,
+            entropy_coeff= [[0, 0.5], [2000000, 0.05]], # entropy coefficient (can be a list of lists)
             model=dict(
                 type= "predator_policy",
-                fc_dims= [256, 256],
+                fc_dims= [64, 64, 64],
                 model_ckpt_filepath= "",
             )
         )

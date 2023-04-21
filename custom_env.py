@@ -29,7 +29,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  preparation_length=120,
                  starting_location_x=None,
                  starting_location_y=None,
-                 use_physics = False,
+                 draging_force_coefficient = False,
                  eating_distance=0.02,
                  min_speed=0.2,
                  max_speed=0.5,
@@ -131,6 +131,14 @@ class CustomEnv(CUDAEnvironmentContext):
         self.max_speed = self.float_dtype(max_speed)
         self.min_speed = self.float_dtype(min_speed)
 
+        # Distance margin between agents for eating
+        # If a predator is closer than this to a prey,
+        # the predator eats the prey
+        assert 0 <= eating_distance <= 1
+        self.eating_distance = (eating_distance * self.stage_size).astype(self.float_dtype)
+
+        self.draging_force_coefficient = draging_force_coefficient
+        
         # ACTION SPACE
         # The num_acceleration and num_turn levels refer to the number of
         # uniformly-spaced levels between (min_acceleration and max_acceleration)
@@ -189,12 +197,6 @@ class CustomEnv(CUDAEnvironmentContext):
         
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
-
-        # Distance margin between agents for eating
-        # If a predator is closer than this to a prey,
-        # the predator eats the prey
-        assert 0 <= eating_distance <= 1
-        self.eating_distance = (eating_distance * self.stage_size).astype(self.float_dtype)
 
         # REWARDS
         self.starving_penalty_for_predator = starving_penalty_for_predator
@@ -271,39 +273,22 @@ class CustomEnv(CUDAEnvironmentContext):
         # Agent types
         agent_types = np.array([self.agent_type[agent_id] for agent_id in range(self.num_agents)])
         # Time to indicate that the agent is still in the game
-        time = np.array([float(self.timestep) / self.episode_length])
 
         if self.timestep != 0:
             raise ValueError("This function should be call only for timestep 0.")
             
+        # Initialize the obs array to 0
         for agent_id in range(self.num_agents):
-            if self.still_in_the_game[agent_id] and self.use_full_observation:
-                obs[agent_id] = np.concatenate(
-                    [
-                        np.vstack((
-                            normalized_global_obs - normalized_global_obs[:, agent_id].reshape(-1, 1),
-                            agent_types,
-                            self.still_in_the_game,
-                            # is_visible
-                        ))[:, [idx for idx in range(self.num_agents) if idx != agent_id], ].reshape(-1),
-                        # filter out the obs for the current agent
-                        time,
-                    ]
-                )
-            else:
-                # Set to 0
-                # obs = [global_obs, agent_types, still_in_the_game, 0]
-                obs[agent_id] = np.concatenate(
-                    [
-                        np.vstack((
-                            np.zeros_like(normalized_global_obs),
-                            agent_types,
-                            self.still_in_the_game,
-                        ))[:, [idx for idx in range(self.num_agents) if idx != agent_id], ].reshape(-1),
-                        # filter out the obs for the current agent
-                        np.array([0.0]),
-                    ]
-                )
+            obs[agent_id] = np.vstack((
+                np.zeros_like(normalized_global_obs),
+                agent_types,
+                self.still_in_the_game,
+            ))[:, [idx for idx in range(self.num_agents) if idx != agent_id], ].reshape(-1)
+
+            if self.use_time_in_observation:  # Check if useTime is True
+                np.concatenate([obs[agent_id], np.array([0.0])])
+                
+
         return obs
 
 
@@ -330,6 +315,8 @@ class CustomEnv(CUDAEnvironmentContext):
         
         # Penalty for hitting the edges
         self.edge_hit_reward_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
+        # Penalty for energy costs
+        self.energy_cost_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
 
         # Reinitialize some variables that may have changed during previous episode
         self.preys = copy.deepcopy(self.preys_at_reset)
@@ -375,6 +362,12 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             ]
         )
         data_dict.add_data(
+            name="eating_distance", data=self.eating_distance
+        )
+        data_dict.add_data(
+            name="draging_force_coefficient", data=self.draging_force_coefficient
+        )
+        data_dict.add_data(
             name="still_in_the_game",
             data=self.still_in_the_game,
             save_copy_and_apply_at_reset=True,
@@ -410,6 +403,11 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             name="edge_hit_reward_penalty",
             data=self.edge_hit_reward_penalty,
             save_copy_and_apply_at_reset=True,
+        )        
+        data_dict.add_data(
+            name="energy_cost_penalty",
+            data=self.energy_cost_penalty,
+            save_copy_and_apply_at_reset=True,
         )
         data_dict.add_data(
             name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
@@ -429,10 +427,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
                 ("end_of_game_reward", self.end_of_game_reward),
             ]
         )
-        data_dict.add_data(
-            name="eating_distance", data=self.eating_distance
-        )
-
+        
         return data_dict
 
     def get_tensor_dictionary(self):
@@ -463,6 +458,8 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "min_acceleration",
             "max_turn",
             "min_turn",
+            "eating_distance",
+            "draging_force_coefficient",
             "still_in_the_game",
             _OBSERVATIONS,
             "use_full_observation",
@@ -476,6 +473,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "use_polar_coordinate",
             _ACTIONS,
             "edge_hit_reward_penalty",
+            "energy_cost_penalty",
             _REWARDS,
             "num_preys",
             "num_predators",
@@ -486,7 +484,6 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "death_penalty_for_prey",
             "end_of_game_penalty",
             "end_of_game_reward",
-            "eating_distance",
             "_done_",
             "_timestep_",
             ("n_agents", "meta"),

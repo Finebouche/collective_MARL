@@ -344,6 +344,7 @@ def CudaCustomEnvGenerateObservation(
                    int32[::1],  # num_preys_arr
                    int32[::1],  # num_predators_arr
                    int32[::1],  # agent_types_arr
+                   float32[:, ::1],  # energy_cost_penalty_arr
                    float32,  # kStarvingPenaltyForPredator
                    float32,  # kEatingRewardForPredator
                    float32,  # kSurvivingRewardForPrey
@@ -368,6 +369,7 @@ def CudaCustomEnvComputeReward(
         num_preys_arr,
         num_predators_arr,
         agent_types_arr,
+        energy_cost_penalty_arr,
         kStarvingPenaltyForPredator,
         kEatingRewardForPredator,
         kSurvivingRewardForPrey,
@@ -431,11 +433,13 @@ def CudaCustomEnvComputeReward(
             if env_timestep_arr[kEnvId] == kEpisodeLength:
                 rewards_arr[kEnvId, kThisAgentId] = kEndOfGameReward
             
-            # Add the edge hit penalty and the step rewards / penalties
+            # Add the edge hit penalty
             rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
                 kEnvId, kThisAgentId
             ]
-                
+            # Add the energy efficiency penalty
+            rewards_arr[kEnvId, kThisAgentId] += energy_cost_penalty_arr[kEnvId, kThisAgentId]/2
+            
 #            if num_preys_arr[kEnvId] < kNumAgents-num_predators_arr[kEnvId]:
 #                is_predator = agent_types_arr[kThisAgentId] == 1
 #                if is_predator:
@@ -471,6 +475,8 @@ def CudaCustomEnvComputeReward(
                    float32,  # kMinAcceleration
                    float32,  # kMaxTurn
                    float32,  # kMinTurn
+                   float32,  # kEatingDistance
+                   float32,  # kDragingForceCoefficient
                    int32[:, ::1],  # still_in_the_game_arr
                    float32[:, :, ::1],  # obs_arr
                    boolean,  # kUseFullObservation
@@ -484,6 +490,7 @@ def CudaCustomEnvComputeReward(
                    boolean,  # kUsePolarCoordinate
                    int32[:, :, ::1],  # action_indices_arr
                    float32[:, ::1],  # edge_hit_reward_penalty_arr
+                   float32[:, ::1],  # energy_cost_penalty_arr
                    float32[:, ::1],  # rewards_arr
                    int32[::1],  # num_preys_arr
                    int32[::1],  # num_predators_arr
@@ -494,7 +501,6 @@ def CudaCustomEnvComputeReward(
                    float32,  # kDeathPenaltyForPrey
                    float32,  # kEndOfGameReward
                    float32,  # kEndOfGamePenalty
-                   float32,  # kEatingDistance
                    int32[::1],  # done_arr
                    int32[::1],  # env_timestep_arr
                    int32,  # kNumAgents
@@ -515,6 +521,8 @@ def NumbaCustomEnvStep(
         kMinAcceleration,
         kMaxTurn,
         kMinTurn,
+        kEatingDistance,
+        kDragingForceCoefficient,
         still_in_the_game_arr,
         obs_arr,
         kUseFullObservation,
@@ -528,6 +536,7 @@ def NumbaCustomEnvStep(
         kUsePolarCoordinate,
         action_indices_arr,
         edge_hit_reward_penalty_arr,
+        energy_cost_penalty_arr,
         rewards_arr,
         num_preys_arr,
         num_predators_arr,
@@ -538,7 +547,6 @@ def NumbaCustomEnvStep(
         kDeathPenaltyForPrey,
         kEndOfGameReward,
         kEndOfGamePenalty,
-        kEatingDistance,
         done_arr,
         env_timestep_arr,
         kNumAgents,
@@ -563,30 +571,44 @@ def NumbaCustomEnvStep(
 
     if kThisAgentId < kNumAgents:
         # get the actions for this agent
-        delta_acceleration = acceleration_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 0]]
-        delta_turn = turn_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 1]]
+        self_force_amplitude = acceleration_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 0]]
+        self_force_orientation = orientation_arr[kEnvId, kThisAgentId] + turn_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 1]]
+        # set the energy cost penalty
+        energy_cost_penalty_arr[kEnvId, kThisAgentId] = - (self_force_amplitude/kMaxAcceleration + abs(self_force_orientation)/kMaxTurn)/100
+
+        # draging_force
+        dragging_force_amplitude = speed_arr[kEnvId, kThisAgentId] * kDragingForceCoefficient
+        dragging_force_orientation = orientation_arr[kEnvId, kThisAgentId]-math.pi
+
+        # Compute the acceleration and turn using projection
+        acceleration_x = self_force_amplitude * math.cos(self_force_orientation) + dragging_force_amplitude * math.cos(
+            dragging_force_orientation
+        )
+        
+        acceleration_y = self_force_amplitude * math.sin(self_force_orientation) + dragging_force_amplitude * math.sin(
+            dragging_force_orientation
+        )
+        # Compute the amplitude and turn in polar coordinate
+        acceleration_amplitude_arr = math.sqrt(acceleration_x ** 2 + acceleration_y ** 2)
+        acceleration_orientation_arr = math.atan2(acceleration_y, acceleration_x)
+        
+        # Compute the acceleration and turn using projection
+        speed_x = speed_arr[kEnvId, kThisAgentId] * math.cos(orientation_arr[kEnvId, kThisAgentId]) + acceleration_x
+        speed_y = speed_arr[kEnvId, kThisAgentId] * math.sin(orientation_arr[kEnvId, kThisAgentId]) + acceleration_y
 
         # Update the agent's acceleration and directions
-        acceleration_arr[kEnvId, kThisAgentId] += delta_acceleration
-        orientation_arr[kEnvId, kThisAgentId] = ((orientation_arr[kEnvId, kThisAgentId] + delta_turn) % kTwoPi) * still_in_the_game_arr[
-            kEnvId, kThisAgentId]
-
-        # Direction is kept in [0, 2pi]
-        if orientation_arr[kEnvId, kThisAgentId] < 0:
-            orientation_arr[kEnvId, kThisAgentId] = (
-                    kTwoPi + orientation_arr[kEnvId, kThisAgentId]
-            )
-
+        acceleration_arr[kEnvId, kThisAgentId] = acceleration_amplitude_arr * still_in_the_game_arr[kEnvId, kThisAgentId]
+        orientation_arr[kEnvId, kThisAgentId] = math.atan2(speed_y, speed_x) 
+        speed_arr[kEnvId, kThisAgentId] = math.sqrt(speed_x ** 2 + speed_y ** 2) * still_in_the_game_arr[kEnvId, kThisAgentId]
+        
         # Speed clipping
-        speed_arr[kEnvId, kThisAgentId] = min(
-            kMaxSpeed,
-            max(kMinSpeed, speed_arr[kEnvId, kThisAgentId] + acceleration_arr[kEnvId, kThisAgentId], )
-        ) * still_in_the_game_arr[kEnvId, kThisAgentId]
+        # if speed_arr[kEnvId, kThisAgentId] > kMaxSpeed :
+        #     speed_arr[kEnvId, kThisAgentId] = kMaxSpeed * still_in_the_game_arr[kEnvId, kThisAgentId]
 
         # Reset acceleration to 0 when speed becomes 0 or
-        # kMaxSpeed (multiplied by skill levels)
         if speed_arr[kEnvId, kThisAgentId] <= kMinSpeed or speed_arr[kEnvId, kThisAgentId] >= kMaxSpeed:
             acceleration_arr[kEnvId, kThisAgentId] = 0.0
+            
 
         # Update the agent's location
         loc_x_arr[kEnvId, kThisAgentId] += speed_arr[kEnvId, kThisAgentId] * math.cos(
@@ -595,6 +617,11 @@ def NumbaCustomEnvStep(
         loc_y_arr[kEnvId, kThisAgentId] += speed_arr[kEnvId, kThisAgentId] * math.sin(
             orientation_arr[kEnvId, kThisAgentId]
         )
+
+        # BUMP INTO OTHER AGENTS
+        
+        
+        # EDGE CROSSING
 
         # Check if the agent has crossed the edge
         has_crossed_edge = (
@@ -666,6 +693,7 @@ def NumbaCustomEnvStep(
         num_preys_arr,
         num_predators_arr,
         agent_types_arr,
+        energy_cost_penalty_arr,
         kStarvingPenaltyForPredator,
         kEatingRewardForPredator,
         kSurvivingRewardForPrey,
