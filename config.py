@@ -14,15 +14,15 @@ run_config  = dict(
         # Physics
         draging_force_coefficient = 0.5,
         eating_distance=0.02,
-        # Action parameters
         min_speed=0,
-        max_speed=10,
+        max_speed=100,
+        # Action parameters
         max_acceleration=0.1,
         min_acceleration=0,
         max_turn= np.pi/2,  # pi radians
         min_turn=- np.pi/2,  # pi radians
-        num_acceleration_levels=5,
-        num_turn_levels=6,
+        num_acceleration_levels=10,
+        num_turn_levels=10,
         # Reward parameters
         starving_penalty_for_predator=-0.1,
         eating_reward_for_predator=100.0,
@@ -31,6 +31,7 @@ run_config  = dict(
         edge_hit_penalty=-0.0,
         end_of_game_penalty=-0,
         end_of_game_reward=0,
+        use_energy_cost=True,
         # Observation parameters
         use_full_observation=False, # Put False if not used
         max_seeing_angle= 3*np.pi/2,  # Put None if not used
@@ -46,7 +47,7 @@ run_config  = dict(
     trainer=dict(
         num_envs= 400, # number of environment replicas
         train_batch_size= 1000, # total batch size used for training per iteration (across all the environments)
-        num_episodes= 1000, # number of episodes to run the training for (can be arbitrarily high)
+        num_episodes= 10000, # number of episodes to run the training for (can be arbitrarily high)
     ),
     # Policy network settings
     policy=dict( # list all the policies below

@@ -489,8 +489,6 @@ def CudaCustomEnvComputeReward(
                    boolean,  # kUseTimeInObservation
                    boolean,  # kUsePolarCoordinate
                    int32[:, :, ::1],  # action_indices_arr
-                   float32[:, ::1],  # edge_hit_reward_penalty_arr
-                   float32[:, ::1],  # energy_cost_penalty_arr
                    float32[:, ::1],  # rewards_arr
                    int32[::1],  # num_preys_arr
                    int32[::1],  # num_predators_arr
@@ -501,6 +499,9 @@ def CudaCustomEnvComputeReward(
                    float32,  # kDeathPenaltyForPrey
                    float32,  # kEndOfGameReward
                    float32,  # kEndOfGamePenalty
+                   boolean,  # kUseEnergyCost
+                   float32[:, ::1],  # edge_hit_reward_penalty_arr
+                   float32[:, ::1],  # energy_cost_penalty_arr
                    int32[::1],  # done_arr
                    int32[::1],  # env_timestep_arr
                    int32,  # kNumAgents
@@ -535,8 +536,6 @@ def NumbaCustomEnvStep(
         kUseTimeInObservation,
         kUsePolarCoordinate,
         action_indices_arr,
-        edge_hit_reward_penalty_arr,
-        energy_cost_penalty_arr,
         rewards_arr,
         num_preys_arr,
         num_predators_arr,
@@ -547,6 +546,9 @@ def NumbaCustomEnvStep(
         kDeathPenaltyForPrey,
         kEndOfGameReward,
         kEndOfGamePenalty,
+        kUseEnergyCost,
+        edge_hit_reward_penalty_arr,
+        energy_cost_penalty_arr,
         done_arr,
         env_timestep_arr,
         kNumAgents,
@@ -574,7 +576,8 @@ def NumbaCustomEnvStep(
         self_force_amplitude = acceleration_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 0]]
         self_force_orientation = orientation_arr[kEnvId, kThisAgentId] + turn_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 1]]
         # set the energy cost penalty
-        energy_cost_penalty_arr[kEnvId, kThisAgentId] = - (self_force_amplitude/kMaxAcceleration + abs(self_force_orientation)/kMaxTurn)/100
+        if kUseEnergyCost:
+            energy_cost_penalty_arr[kEnvId, kThisAgentId] = - (self_force_amplitude/kMaxAcceleration + abs(self_force_orientation)/kMaxTurn)/100
 
         # draging_force
         dragging_force_amplitude = speed_arr[kEnvId, kThisAgentId] * kDragingForceCoefficient

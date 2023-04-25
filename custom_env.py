@@ -46,6 +46,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  edge_hit_penalty=-0.1,
                  end_of_game_penalty=-10,
                  end_of_game_reward=10,
+                 use_energy_cost=True,
                  use_full_observation=True,
                  max_seeing_angle=None,
                  max_seeing_distance=None,
@@ -206,6 +207,7 @@ class CustomEnv(CUDAEnvironmentContext):
         self.edge_hit_penalty = edge_hit_penalty
         self.end_of_game_penalty = end_of_game_penalty
         self.end_of_game_reward = end_of_game_reward
+        self.use_energy_cost = use_energy_cost
 
         # Copy preys dict for applying at reset
         self.preys_at_reset = copy.deepcopy(self.preys)
@@ -398,17 +400,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
 
         
         # _OBSERVATIONS,
-        # _ACTIONS,
-        data_dict.add_data(
-            name="edge_hit_reward_penalty",
-            data=self.edge_hit_reward_penalty,
-            save_copy_and_apply_at_reset=True,
-        )        
-        data_dict.add_data(
-            name="energy_cost_penalty",
-            data=self.energy_cost_penalty,
-            save_copy_and_apply_at_reset=True,
-        )
+        # _ACTIONS,        
         data_dict.add_data(
             name="num_preys", data=self.num_preys, save_copy_and_apply_at_reset=True
         )
@@ -425,7 +417,18 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
                 ("death_penalty_for_prey", self.death_penalty_for_prey),
                 ("end_of_game_penalty", self.end_of_game_penalty),
                 ("end_of_game_reward", self.end_of_game_reward),
+                ("use_energy_cost", self.use_energy_cost),
             ]
+        )
+        data_dict.add_data(
+            name="edge_hit_reward_penalty",
+            data=self.edge_hit_reward_penalty,
+            save_copy_and_apply_at_reset=True,
+        )
+        data_dict.add_data(
+            name="energy_cost_penalty",
+            data=self.energy_cost_penalty,
+            save_copy_and_apply_at_reset=True,
         )
         
         return data_dict
@@ -472,8 +475,6 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "use_time_in_observation",
             "use_polar_coordinate",
             _ACTIONS,
-            "edge_hit_reward_penalty",
-            "energy_cost_penalty",
             _REWARDS,
             "num_preys",
             "num_predators",
@@ -484,6 +485,9 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "death_penalty_for_prey",
             "end_of_game_penalty",
             "end_of_game_reward",
+            "use_energy_cost",
+            "edge_hit_reward_penalty",
+            "energy_cost_penalty",
             "_done_",
             "_timestep_",
             ("n_agents", "meta"),
