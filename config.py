@@ -8,12 +8,15 @@ run_config  = dict(
     env =dict(
         num_preys=50,
         num_predators=3,
-        stage_size=20,
+        stage_size=30,
         episode_length=500,
         preparation_length=120,
         # Physics
         draging_force_coefficient = 0.5,
-        eating_distance=0.02,
+        contact_force_coefficient = 0.2,
+        wall_contact_force_coefficient = 0.2,
+        prey_size=0.1,
+        predator_size=0.2,
         min_speed=0,
         max_speed=100,
         # Action parameters
@@ -25,18 +28,18 @@ run_config  = dict(
         num_turn_levels=10,
         # Reward parameters
         starving_penalty_for_predator=-0.1,
-        eating_reward_for_predator=100.0,
+        eating_reward_for_predator=10.0,
         surviving_reward_for_prey=0.1,
         death_penalty_for_prey=-100.0,
-        edge_hit_penalty=-0.0,
+        edge_hit_penalty=-0.1,
         end_of_game_penalty=-0,
         end_of_game_reward=0,
         use_energy_cost=True,
         # Observation parameters
         use_full_observation=False, # Put False if not used
-        max_seeing_angle= 3*np.pi/2,  # Put None if not used
-        max_seeing_distance=6,  # Put None if not used
-        num_other_agents_observed = None,  # Put None if not used
+        max_seeing_angle= None,  # Put None if not used
+        max_seeing_distance=None,  # Put None if not used
+        num_other_agents_observed = 8,  # Put None if not used
         use_time_in_observation=False,
         use_polar_coordinate=True,
         seed=None,

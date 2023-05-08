@@ -11,8 +11,10 @@ from mpl_toolkits.mplot3d import art3d
 def generate_animation(
     trainer,
     fps=50,
-    tagger_color="#C843C3",
-    runner_color="#245EB6",
+    predator_color="#C843C3",
+    predator_size=1,
+    prey_color="#245EB6",
+    prey_size=0.2,
     runner_not_in_game_color="#666666",
     fig_width=6,
     fig_height=6,
@@ -25,8 +27,8 @@ def generate_animation(
     )
     env = trainer.cuda_envs.env
 
-    episode_states["loc_x"] = episode_states["loc_x"]/ env.stage_size
-    episode_states["loc_y"] = episode_states["loc_y"]/ env.stage_size
+    episode_states["loc_x"] = episode_states["loc_x"]
+    episode_states["loc_y"] = episode_states["loc_y"]
     assert isinstance(episode_states, dict)
 
     fig, ax = plt.subplots(
@@ -36,13 +38,12 @@ def generate_animation(
     ax = fig.add_subplot(1, 1, 1, projection="3d")
 
     # Bounds
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    ax.set_xlim(0, env.stage_size)
+    ax.set_ylim(0, env.stage_size)
     ax.set_zlim(-0.01, 0.01)
 
     # Surface
-    corner_points = [(0, 0), (0, 1), (1, 1), (1, 0)]
-
+    corner_points = [(0, 0), (0, env.stage_size), (env.stage_size, env.stage_size), (env.stage_size, 0)]
     poly = Polygon(corner_points, color=(0.1, 0.2, 0.5, 0.15))
     ax.add_patch(poly)
     art3d.pathpatch_2d_to_3d(poly, z=0, zdir="z")
@@ -51,16 +52,10 @@ def generate_animation(
     ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
     ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
     ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
-
-    # Hide grid lines
+    # Hide grid lines and axes
     ax.grid(False)
-
-    # Hide axes ticks
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_zticks([])
-    # Hide axes
     ax.set_axis_off()
+    
     # Set camera
     ax.set_box_aspect((40, -55, 10))
 
@@ -75,22 +70,22 @@ def generate_animation(
     lines = [None for _ in range(env.num_agents)]
     for idx in range(env.num_agents):
         if idx in env.predators:
-            lines[idx], = ax.plot3D(
-                [],
-                [],
-                [],
-                color=tagger_color,
+            lines[idx], = ax.plot(
+                episode_states["loc_x"][:1, idx],
+                episode_states["loc_y"][:1, idx],
+                [0],
+                color=predator_color,
                 marker="o",
-                markersize=8,
+                markersize=predator_size* fig.dpi * fig_height / env.stage_size,
             )
         else:  # preys
-            lines[idx], = ax.plot3D(
-                [],
-                [],
-                [],
-                color=runner_color,
+            lines[idx], = ax.plot(
+                episode_states["loc_x"][:1, idx],
+                episode_states["loc_y"][:1, idx],
+                [0],
+                color=prey_color,
                 marker="o",
-                markersize=4,
+                markersize=prey_size* fig.dpi * fig_height / env.stage_size,
             )
 
     labels=[None, None]
@@ -105,13 +100,6 @@ def generate_animation(
 
     # Init lines values
     def init_agent_drawing():
-        for idx, line in enumerate(lines):
-            line.set_data_3d(
-                episode_states["loc_x"][:1, idx],
-                episode_states["loc_y"][:1, idx],
-                [0],
-            )
-
         labels[0].set_text("Time Step:".ljust(14) + f"{0:4.0f}\n")
         labels[1].set_text("preys Left:".ljust(14) + f"{init_num_preys:4} ({100:.0f}%)")
         return lines + labels

@@ -7,6 +7,16 @@ kTwoPi = 6.283185308
 kEpsilon = 1.0e-10
 
 
+@numba_driver.jit(device=True)
+def sign(x):
+    if x == 0:
+        return 0
+    elif x > 0:
+        return 1
+    else:
+        return -1
+    
+    
 # Device helper function to compute distances between two agents
 @numba_driver.jit((float32[:, ::1],
                    float32[:, ::1],
@@ -349,8 +359,6 @@ def CudaCustomEnvGenerateObservation(
                    float32,  # kEatingRewardForPredator
                    float32,  # kSurvivingRewardForPrey
                    float32,  # kDeathPenaltyForPrey
-                   float32,  # kEndOfGameReward
-                   float32,  # kEndOfGamePenalty
                    int32[:, ::1],  # still_in_the_game_arr
                    int32[::1],  # done_arr
                    int32[::1],  # env_timestep_arr
@@ -374,8 +382,6 @@ def CudaCustomEnvComputeReward(
         kEatingRewardForPredator,
         kSurvivingRewardForPrey,
         kDeathPenaltyForPrey,
-        kEndOfGameReward,
-        kEndOfGamePenalty,
         still_in_the_game_arr,
         done_arr,
         env_timestep_arr,
@@ -392,11 +398,12 @@ def CudaCustomEnvComputeReward(
         numba_driver.syncthreads()
 
         if still_in_the_game_arr[kEnvId, kThisAgentId]:
-            min_dist = kStageSize * math.sqrt(2.0)
             is_prey = not agent_types_arr[kThisAgentId] # 0 for prey, 1 for predator
 
             if is_prey:
-                rewards_arr[kEnvId, kThisAgentId] = kSurvivingRewardForPrey
+                rewards_arr[kEnvId, kThisAgentId] += kSurvivingRewardForPrey
+                min_dist = kStageSize * math.sqrt(2.0)
+
                 for other_agent_id in range(kNumAgents):
                     
                     #We compare distance with predators
@@ -412,49 +419,25 @@ def CudaCustomEnvComputeReward(
                         if dist < min_dist:
                             min_dist = dist
                             nearest_predator_id = other_agent_id
-            else:
-                rewards_arr[kEnvId, kThisAgentId] = kStarvingPenaltyForPredator
+                if min_dist < kEatingDistance:
+                    # The prey is eaten
+                    rewards_arr[kEnvId, nearest_predator_id] += kEatingRewardForPredator
+                    rewards_arr[kEnvId, kThisAgentId] += kDeathPenaltyForPrey
+                    num_preys_arr[kEnvId] -= 1
+                    still_in_the_game_arr[kEnvId, kThisAgentId] = 0
 
-            if min_dist < kEatingDistance:
-                # The prey is eaten
-                still_in_the_game_arr[kEnvId, kThisAgentId] = 0
-                num_preys_arr[kEnvId] -= 1
-                
-                # The reward changes
-                #for agent_id in range(kNumAgents):
-                #if still_in_the_game_arr[kEnvId, agent_id]:
-                #is_predator = agent_types_arr[agent_id] == 1
-                #if is_predator:
-                rewards_arr[kEnvId, nearest_predator_id] = kEatingRewardForPredator
-                #else:
-                rewards_arr[kEnvId, kThisAgentId] = kDeathPenaltyForPrey
-
-            # Add end of the game reward if useful
-            if env_timestep_arr[kEnvId] == kEpisodeLength:
-                rewards_arr[kEnvId, kThisAgentId] = kEndOfGameReward
-            
-            # Add the edge hit penalty
-            rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
-                kEnvId, kThisAgentId
-            ]
-            # Add the energy efficiency penalty
-            rewards_arr[kEnvId, kThisAgentId] += energy_cost_penalty_arr[kEnvId, kThisAgentId]/2
-            
-#            if num_preys_arr[kEnvId] < kNumAgents-num_predators_arr[kEnvId]:
-#                is_predator = agent_types_arr[kThisAgentId] == 1
-#                if is_predator:
-#                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGameReward
-#                else:
-#                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
-#            else:
-#                if is_prey:
-#                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGameReward
-#                else:
-#                    rewards_arr[kEnvId, kThisAgentId] += kEndOfGamePenalty
-#                    
-
+            else: #is_predator
+                rewards_arr[kEnvId, kThisAgentId] += kStarvingPenaltyForPredator    
             
     numba_driver.syncthreads()
+    
+    # Add the edge hit penalty
+    rewards_arr[kEnvId, kThisAgentId] += edge_hit_reward_penalty_arr[
+        kEnvId, kThisAgentId
+    ]
+    # Add the energy efficiency penalty
+    rewards_arr[kEnvId, kThisAgentId] += energy_cost_penalty_arr[kEnvId, kThisAgentId]/2
+        
     
     if kThisAgentId == 0:
         if env_timestep_arr[kEnvId] == kEpisodeLength:
@@ -476,7 +459,11 @@ def CudaCustomEnvComputeReward(
                    float32,  # kMaxTurn
                    float32,  # kMinTurn
                    float32,  # kEatingDistance
+                   float32,  # kPreySize
+                   float32,  # kPredatorSize
                    float32,  # kDragingForceCoefficient
+                   float32,  # kContactForceCoefficient
+                   float32,  # kWallContactForceCoefficient
                    int32[:, ::1],  # still_in_the_game_arr
                    float32[:, :, ::1],  # obs_arr
                    boolean,  # kUseFullObservation
@@ -523,7 +510,11 @@ def NumbaCustomEnvStep(
         kMaxTurn,
         kMinTurn,
         kEatingDistance,
+        kPreySize,
+        kPredatorSize,
         kDragingForceCoefficient,
+        kContactForceCoefficient,
+        kWallContactForceCoefficient,
         still_in_the_game_arr,
         obs_arr,
         kUseFullObservation,
@@ -575,27 +566,64 @@ def NumbaCustomEnvStep(
         # get the actions for this agent
         self_force_amplitude = acceleration_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 0]]
         self_force_orientation = orientation_arr[kEnvId, kThisAgentId] + turn_actions_arr[action_indices_arr[kEnvId, kThisAgentId, 1]]
+        acceleration_x = self_force_amplitude * math.cos(self_force_orientation)
+        acceleration_y = self_force_amplitude * math.sin(self_force_orientation)
+        
         # set the energy cost penalty
         if kUseEnergyCost:
             energy_cost_penalty_arr[kEnvId, kThisAgentId] = - (self_force_amplitude/kMaxAcceleration + abs(self_force_orientation)/kMaxTurn)/100
 
-        # draging_force
+        # DRAGGING FORCE
         dragging_force_amplitude = speed_arr[kEnvId, kThisAgentId] * kDragingForceCoefficient
-        dragging_force_orientation = orientation_arr[kEnvId, kThisAgentId]-math.pi
-
-        # Compute the acceleration and turn using projection
-        acceleration_x = self_force_amplitude * math.cos(self_force_orientation) + dragging_force_amplitude * math.cos(
-            dragging_force_orientation
-        )
+        dragging_force_orientation = orientation_arr[kEnvId, kThisAgentId]-math.pi # opposed to the current speed
+        acceleration_x += dragging_force_amplitude * math.cos(dragging_force_orientation)
+        acceleration_y += dragging_force_amplitude * math.sin(dragging_force_orientation)
         
-        acceleration_y = self_force_amplitude * math.sin(self_force_orientation) + dragging_force_amplitude * math.sin(
-            dragging_force_orientation
+        # BUMP INTO OTHER AGENTS
+        contact_force_amplitude = 0
+        contact_force_orientation = 0
+        if not agent_types_arr[kThisAgentId]:  # 0 for prey, 1 for predator
+            contactDistance = kPreySize
+        else:
+            contactDistance = kPredatorSize
+        # contact_force
+        if kContactForceCoefficient > 0: 
+            for other_agent_id in range(kNumAgents):
+                if agent_types_arr[kThisAgentId] == agent_types_arr[other_agent_id] and kThisAgentId != other_agent_id:
+                    dist = ComputeDistance(
+                        loc_x_arr,
+                        loc_y_arr,
+                        kThisAgentId,
+                        other_agent_id,
+                        kEnvId,
+                    )
+                    if dist < contactDistance:
+                        contact_force_amplitude = kContactForceCoefficient*(contactDistance*2 - dist)
+                        contact_force_orientation = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId) - math.pi # opposed to the contact direction
+                        acceleration_x += contact_force_amplitude * math.cos(contact_force_orientation)
+                        acceleration_y += contact_force_amplitude * math.sin(contact_force_orientation)
+                        
+        # WALL BOUCING
+        # Check if the agent has crossed the edge
+        is_touching_edge = (
+                loc_x_arr[kEnvId, kThisAgentId] < contactDistance
+                or loc_x_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance
+                or loc_y_arr[kEnvId, kThisAgentId] < contactDistance
+                or loc_y_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance
         )
+        if is_touching_edge and kWallContactForceCoefficient > 0:
+            contact_force_amplitude_x = kWallContactForceCoefficient*min(-loc_x_arr[kEnvId, kThisAgentId] + contactDistance, contactDistance - kStageSize + loc_x_arr[kEnvId, kThisAgentId])
+            contact_force_amplitude_y = kWallContactForceCoefficient*min(-loc_y_arr[kEnvId, kThisAgentId] + contactDistance, contactDistance - kStageSize + loc_y_arr[kEnvId, kThisAgentId])
+            acceleration_x += sign(kStageSize/2 - loc_x_arr[kEnvId, kThisAgentId]) * contact_force_amplitude
+            acceleration_y += sign(kStageSize/2 - loc_y_arr[kEnvId, kThisAgentId]) * contact_force_amplitude
+            
+        
+        # UPDATE ACCELERATION/SPEED
         # Compute the amplitude and turn in polar coordinate
         acceleration_amplitude_arr = math.sqrt(acceleration_x ** 2 + acceleration_y ** 2)
         acceleration_orientation_arr = math.atan2(acceleration_y, acceleration_x)
         
-        # Compute the acceleration and turn using projection
+        # Compute the speed using projection
         speed_x = speed_arr[kEnvId, kThisAgentId] * math.cos(orientation_arr[kEnvId, kThisAgentId]) + acceleration_x
         speed_y = speed_arr[kEnvId, kThisAgentId] * math.sin(orientation_arr[kEnvId, kThisAgentId]) + acceleration_y
 
@@ -604,15 +632,11 @@ def NumbaCustomEnvStep(
         orientation_arr[kEnvId, kThisAgentId] = math.atan2(speed_y, speed_x) 
         speed_arr[kEnvId, kThisAgentId] = math.sqrt(speed_x ** 2 + speed_y ** 2) * still_in_the_game_arr[kEnvId, kThisAgentId]
         
-        # Speed clipping
-        # if speed_arr[kEnvId, kThisAgentId] > kMaxSpeed :
-        #     speed_arr[kEnvId, kThisAgentId] = kMaxSpeed * still_in_the_game_arr[kEnvId, kThisAgentId]
-
-        # Reset acceleration to 0 when speed becomes 0 or
-        if speed_arr[kEnvId, kThisAgentId] <= kMinSpeed or speed_arr[kEnvId, kThisAgentId] >= kMaxSpeed:
-            acceleration_arr[kEnvId, kThisAgentId] = 0.0
-            
-
+        # speed cliping
+        if speed_arr[kEnvId, kThisAgentId] > kMaxSpeed :
+            speed_arr[kEnvId, kThisAgentId] = kMaxSpeed * still_in_the_game_arr[kEnvId, kThisAgentId]
+        
+        # UPDATE POSITION
         # Update the agent's location
         loc_x_arr[kEnvId, kThisAgentId] += speed_arr[kEnvId, kThisAgentId] * math.cos(
             orientation_arr[kEnvId, kThisAgentId]
@@ -620,22 +644,16 @@ def NumbaCustomEnvStep(
         loc_y_arr[kEnvId, kThisAgentId] += speed_arr[kEnvId, kThisAgentId] * math.sin(
             orientation_arr[kEnvId, kThisAgentId]
         )
-
-        # BUMP INTO OTHER AGENTS
         
+        has_crossed_edge = (
+                loc_x_arr[kEnvId, kThisAgentId] < contactDistance/2
+                or loc_x_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance/2
+                or loc_y_arr[kEnvId, kThisAgentId] < contactDistance/2
+                or loc_y_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance/2
+        )
         
         # EDGE CROSSING
-
-        # Check if the agent has crossed the edge
-        has_crossed_edge = (
-                loc_x_arr[kEnvId, kThisAgentId] < 0
-                or loc_x_arr[kEnvId, kThisAgentId] > kStageSize
-                or loc_y_arr[kEnvId, kThisAgentId] < 0
-                or loc_y_arr[kEnvId, kThisAgentId] > kStageSize
-        )
-
         # Clip x and y if agent has crossed edge
-        # Here we should code a bounce back effect
         if has_crossed_edge:
             if loc_x_arr[kEnvId, kThisAgentId] < 0:
                 loc_x_arr[kEnvId, kThisAgentId] = 0.0
@@ -701,8 +719,6 @@ def NumbaCustomEnvStep(
         kEatingRewardForPredator,
         kSurvivingRewardForPrey,
         kDeathPenaltyForPrey,
-        kEndOfGameReward,
-        kEndOfGamePenalty,
         still_in_the_game_arr,
         done_arr,
         env_timestep_arr,

@@ -29,8 +29,12 @@ class CustomEnv(CUDAEnvironmentContext):
                  preparation_length=120,
                  starting_location_x=None,
                  starting_location_y=None,
-                 draging_force_coefficient = False,
-                 eating_distance=0.02,
+                 # Physics
+                 draging_force_coefficient = 0,
+                 contact_force_coefficient = 0,
+                 wall_contact_force_coefficient = 0,
+                 prey_size=0.2,
+                 predator_size=0.2,                 
                  min_speed=0.2,
                  max_speed=0.5,
                  max_acceleration=0.5,
@@ -135,10 +139,15 @@ class CustomEnv(CUDAEnvironmentContext):
         # Distance margin between agents for eating
         # If a predator is closer than this to a prey,
         # the predator eats the prey
-        assert 0 <= eating_distance <= 1
-        self.eating_distance = (eating_distance * self.stage_size).astype(self.float_dtype)
+        assert 0 <= prey_size <= 1
+        assert 0 <= predator_size <= 1
+        self.eating_distance = prey_size + predator_size
+        self.prey_size = prey_size
+        self.predator_size = predator_size
 
         self.draging_force_coefficient = draging_force_coefficient
+        self.contact_force_coefficient = contact_force_coefficient
+        self.wall_contact_force_coefficient = wall_contact_force_coefficient
         
         # ACTION SPACE
         # The num_acceleration and num_turn levels refer to the number of
@@ -296,7 +305,7 @@ class CustomEnv(CUDAEnvironmentContext):
 
     def reset(self):
         """
-        Env reset().
+        Env reset(). when done is called
         """
         # Reset time to the beginning
         self.timestep = 0
@@ -363,12 +372,17 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
                 ("min_turn", self.min_turn),
             ]
         )
-        data_dict.add_data(
-            name="eating_distance", data=self.eating_distance
+        data_dict.add_data_list(
+            [
+                ("eating_distance", self.eating_distance),
+                ("prey_size", self.prey_size),
+                ("predator_size", self.predator_size),
+                ("draging_force_coefficient", self.draging_force_coefficient),
+                ("contact_force_coefficient", self.contact_force_coefficient),
+                ("wall_contact_force_coefficient", self.wall_contact_force_coefficient),
+            ]
         )
-        data_dict.add_data(
-            name="draging_force_coefficient", data=self.draging_force_coefficient
-        )
+        
         data_dict.add_data(
             name="still_in_the_game",
             data=self.still_in_the_game,
@@ -462,7 +476,11 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             "max_turn",
             "min_turn",
             "eating_distance",
+            "prey_size",
+            "predator_size",
             "draging_force_coefficient",
+            "contact_force_coefficient",
+            "wall_contact_force_coefficient",
             "still_in_the_game",
             _OBSERVATIONS,
             "use_full_observation",
