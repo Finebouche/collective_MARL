@@ -30,11 +30,11 @@ class CustomEnv(CUDAEnvironmentContext):
                  starting_location_x=None,
                  starting_location_y=None,
                  # Physics
-                 draging_force_coefficient = 0,
-                 contact_force_coefficient = 0,
-                 wall_contact_force_coefficient = 0,
+                 draging_force_coefficient=0,
+                 contact_force_coefficient=0,
+                 wall_contact_force_coefficient=0,
                  prey_size=0.2,
-                 predator_size=0.2,                 
+                 predator_size=0.2,
                  min_speed=0.2,
                  max_speed=0.5,
                  max_acceleration=0.5,
@@ -54,7 +54,7 @@ class CustomEnv(CUDAEnvironmentContext):
                  use_full_observation=True,
                  max_seeing_angle=None,
                  max_seeing_distance=None,
-                 num_other_agents_observed = None,
+                 num_other_agents_observed=None,
                  use_time_in_observation=True,
                  use_polar_coordinate=False,
                  seed=None,
@@ -148,7 +148,7 @@ class CustomEnv(CUDAEnvironmentContext):
         self.draging_force_coefficient = draging_force_coefficient
         self.contact_force_coefficient = contact_force_coefficient
         self.wall_contact_force_coefficient = wall_contact_force_coefficient
-        
+
         # ACTION SPACE
         # The num_acceleration and num_turn levels refer to the number of
         # uniformly-spaced levels between (min_acceleration and max_acceleration)
@@ -162,7 +162,6 @@ class CustomEnv(CUDAEnvironmentContext):
 
         self.max_turn = self.float_dtype(max_turn)
         self.min_turn = self.float_dtype(min_turn)
-
 
         # Acceleration actions
         self.acceleration_actions = np.linspace(
@@ -179,7 +178,7 @@ class CustomEnv(CUDAEnvironmentContext):
         )
         # Add action 0 - this will be the no-op, or 0 turn
         self.turn_actions = np.insert(self.turn_actions, 0, 0).astype(self.float_dtype)
-        
+
         # These will be set during reset (see below)
         self.timestep = None
         self.global_state = None
@@ -192,19 +191,19 @@ class CustomEnv(CUDAEnvironmentContext):
         }
 
         # OBSERVATION SPACE
-        if sum(var for var in [use_full_observation, num_other_agents_observed is not None, (max_seeing_angle is not None and max_seeing_distance is not None)]) != 1:
+        if sum(var for var in [use_full_observation, num_other_agents_observed is not None,
+                               (max_seeing_angle is not None and max_seeing_distance is not None)]) != 1:
             raise ValueError("Only one of use_full_observation, num_other_agents_observed, and max_seeing_angle should be set.")
-
 
         self.observation_space = None  # Note: this will be set via the env_wrapper
         self.use_full_observation = use_full_observation
         self.num_other_agents_observed = self.num_agents if num_other_agents_observed is None else num_other_agents_observed
-        self.max_seeing_angle = stage_size/np.sqrt(2) if max_seeing_angle is None else max_seeing_angle
+        self.max_seeing_angle = stage_size / np.sqrt(2) if max_seeing_angle is None else max_seeing_angle
         self.max_seeing_distance = np.pi if max_seeing_distance is None else max_seeing_distance
-        
+
         self.use_time_in_observation = use_time_in_observation
         self.use_polar_coordinate = use_polar_coordinate
-        
+
         # Used in generate_observation()
         self.init_obs = None  # Will be set later in generate_observation()
 
@@ -256,7 +255,6 @@ class CustomEnv(CUDAEnvironmentContext):
 
             self.global_state[key][t] = value
 
-
     def generate_observation(self):
         """
         Generate and return the observations for every agent.
@@ -287,7 +285,7 @@ class CustomEnv(CUDAEnvironmentContext):
 
         if self.timestep != 0:
             raise ValueError("This function should be call only for timestep 0.")
-            
+
         # Initialize the obs array to 0
         for agent_id in range(self.num_agents):
             obs[agent_id] = np.vstack((
@@ -298,10 +296,8 @@ class CustomEnv(CUDAEnvironmentContext):
 
             if self.use_time_in_observation:  # Check if useTime is True
                 np.concatenate([obs[agent_id], np.array([0.0])])
-                
 
         return obs
-
 
     def reset(self):
         """
@@ -309,10 +305,10 @@ class CustomEnv(CUDAEnvironmentContext):
         """
         # Reset time to the beginning
         self.timestep = 0
-        
+
         # Re-initialize the global state
         self.global_state = {}
-        
+
         # Array to keep track of the agents that are still in play
         self.still_in_the_game = np.ones(self.num_agents, dtype=self.int_dtype)
 
@@ -322,8 +318,8 @@ class CustomEnv(CUDAEnvironmentContext):
         self.set_global_state(key=_ORI, value=self.starting_directions, t=self.timestep)
         self.set_global_state(key=_ACC, value=self.starting_directions, t=self.timestep)
         self.set_global_state(key=_LOC_X, value=self.starting_location_x, t=self.timestep)
-        self.set_global_state(key=_LOC_Y, value=self.starting_location_y, t=self.timestep)        
-        
+        self.set_global_state(key=_LOC_Y, value=self.starting_location_y, t=self.timestep)
+
         # Penalty for hitting the edges
         self.edge_hit_reward_penalty = np.zeros(self.num_agents, dtype=self.float_dtype)
         # Penalty for energy costs
@@ -382,7 +378,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
                 ("wall_contact_force_coefficient", self.wall_contact_force_coefficient),
             ]
         )
-        
+
         data_dict.add_data(
             name="still_in_the_game",
             data=self.still_in_the_game,
@@ -412,7 +408,6 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
         data_dict.add_data(name="use_time_in_observation", data=self.use_time_in_observation)
         data_dict.add_data(name="use_polar_coordinate", data=self.use_polar_coordinate)
 
-        
         # _OBSERVATIONS,
         # _ACTIONS,        
         data_dict.add_data(
@@ -444,7 +439,7 @@ class CUDACustomEnv(CustomEnv, CUDAEnvironmentContext):
             data=self.energy_cost_penalty,
             save_copy_and_apply_at_reset=True,
         )
-        
+
         return data_dict
 
     def get_tensor_dictionary(self):
