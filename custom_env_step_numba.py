@@ -4,6 +4,7 @@ import numba.cuda as numba_driver
 from numba import float32, int32, boolean, types
 
 kTwoPi = 6.283185308
+kPi = 3.141592653
 kEpsilon = 1.0e-10
 
 
@@ -40,18 +41,21 @@ def ComputeDistance(
                    float32[:, ::1],
                    int32,
                    int32,
-                   int32),
+                   int32,
+                   boolean),
                   device=True,
                   inline=True)
 def ComputeAngle(
-        loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId1, kThisAgentId2, kEnvId
+        loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId1, kThisAgentId2, kEnvId, relativeToHeading
 ):
-    return math.degrees(
-        math.atan2(
+    angle = math.atan2(
             loc_y_arr[kEnvId, kThisAgentId1] - loc_y_arr[kEnvId, kThisAgentId2],
             loc_x_arr[kEnvId, kThisAgentId1] - loc_x_arr[kEnvId, kThisAgentId2]
-        ) - orientation_arr[kEnvId, kThisAgentId1]
-    )
+        ) 
+    if relativeToHeading:
+        angle = angle - orientation_arr[kEnvId, kThisAgentId1]
+    # return the angle in the range ]-pi, pi[
+    return (angle + kPi) % kTwoPi - kPi
 
 
 # Device helper function to compute angle between two agents
@@ -96,7 +100,7 @@ def UpdateObservation(
     ) / kTwoPi
     if kUsePolarCoordinate:
         ditance = ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)
-        angle = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId)
+        angle = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId, True)
         # update relative distance of the other agent
         obs_arr[kEnvId, kThisAgentId, 4 * (kNumAgents - 1) + index] = ditance / (math.sqrt(2.0) * kStageSize)
         # update relative direction of the other agent
@@ -323,7 +327,7 @@ def CudaCustomEnvGenerateObservation(
                 for other_agent_id in range(kNumAgents):
                     if not other_agent_id == kThisAgentId:
                         ditance = ComputeDistance(loc_x_arr, loc_y_arr, kThisAgentId, other_agent_id, kEnvId)
-                        angle = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId)
+                        angle = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId, True)
                         if ditance < kMaxSeeingDistance and angle < kMaxSeeingAngle:
                             obs_arr = UpdateObservation(
                                 obs_arr,
@@ -576,7 +580,7 @@ def NumbaCustomEnvStep(
         # set the energy cost penalty
         if kUseEnergyCost:
             energy_cost_penalty_arr[kEnvId, kThisAgentId] = - (
-                        self_force_amplitude / kMaxAcceleration + abs(self_force_orientation) / kMaxTurn) / 100
+                        self_force_amplitude / kMaxAcceleration + abs(self_force_orientation) / kMaxTurn) / 10
 
         # DRAGGING FORCE
         dragging_force_amplitude = speed_arr[kEnvId, kThisAgentId] * kDragingForceCoefficient
@@ -587,10 +591,10 @@ def NumbaCustomEnvStep(
         # BUMP INTO OTHER AGENTS
         contact_force_amplitude = 0
         contact_force_orientation = 0
+        # set the size of the current agent
+        agentSize = kPredatorSize
         if not agent_types_arr[kThisAgentId]:  # 0 for prey, 1 for predator
-            contactDistance = kPreySize
-        else:
-            contactDistance = kPredatorSize
+            agentSize = kPreySize
         # contact_force
         if kContactForceCoefficient > 0:
             for other_agent_id in range(kNumAgents):
@@ -602,32 +606,36 @@ def NumbaCustomEnvStep(
                         other_agent_id,
                         kEnvId,
                     )
-                    if dist < contactDistance:
-                        contact_force_amplitude = kContactForceCoefficient * (contactDistance * 2 - dist)
-                        contact_force_orientation = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id,
-                                                                 kEnvId) - math.pi  # opposed to the contact direction
+                    if dist < agentSize * 2:
+                        contact_force_amplitude = kContactForceCoefficient * (agentSize * 2 - dist)
+                        contact_force_orientation = ComputeAngle(loc_x_arr, loc_y_arr, orientation_arr, kThisAgentId, other_agent_id, kEnvId, False) - math.pi  # opposed to the contact direction
                         acceleration_x += contact_force_amplitude * math.cos(contact_force_orientation)
                         acceleration_y += contact_force_amplitude * math.sin(contact_force_orientation)
 
         # WALL BOUCING
-        # Check if the agent has crossed the edge
-        is_touching_edge = (
-                loc_x_arr[kEnvId, kThisAgentId] < contactDistance
-                or loc_x_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance
-                or loc_y_arr[kEnvId, kThisAgentId] < contactDistance
-                or loc_y_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance
-        )
-        if is_touching_edge and kWallContactForceCoefficient > 0:
-            contact_force_amplitude_x = kWallContactForceCoefficient * min(-loc_x_arr[kEnvId, kThisAgentId] + contactDistance,
-                                                                           contactDistance - kStageSize + loc_x_arr[kEnvId, kThisAgentId])
-            contact_force_amplitude_y = kWallContactForceCoefficient * min(-loc_y_arr[kEnvId, kThisAgentId] + contactDistance,
-                                                                           contactDistance - kStageSize + loc_y_arr[kEnvId, kThisAgentId])
-            acceleration_x += sign(kStageSize / 2 - loc_x_arr[kEnvId, kThisAgentId]) * contact_force_amplitude
-            acceleration_y += sign(kStageSize / 2 - loc_y_arr[kEnvId, kThisAgentId]) * contact_force_amplitude
+        if kWallContactForceCoefficient > 0:
+            # Check if the agent has crossed the edge
+            # and Apply bouncing force to the agent
+            if loc_x_arr[kEnvId, kThisAgentId] < agentSize:
+                # Agent is touching the left edge
+                acceleration_x += kWallContactForceCoefficient * (agentSize - loc_x_arr[kEnvId, kThisAgentId])
+                
+            if loc_x_arr[kEnvId, kThisAgentId] > kStageSize - agentSize:
+                # Agent is touching the right edge
+                acceleration_x += kWallContactForceCoefficient * ((kStageSize - agentSize) - loc_x_arr[kEnvId, kThisAgentId])
 
+            if loc_y_arr[kEnvId, kThisAgentId] < agentSize:
+                # Agent is touching the top edge
+                acceleration_y += kWallContactForceCoefficient * (agentSize - loc_y_arr[kEnvId, kThisAgentId])
+
+            if loc_y_arr[kEnvId, kThisAgentId] > kStageSize - agentSize:
+                # Agent is touching the bottom edge
+                acceleration_y += kWallContactForceCoefficient * ((kStageSize - agentSize) - loc_y_arr[kEnvId, kThisAgentId])
+
+ 
         # UPDATE ACCELERATION/SPEED
         # Compute the amplitude and turn in polar coordinate
-        acceleration_amplitude_arr = math.sqrt(acceleration_x ** 2 + acceleration_y ** 2)
+        acceleration_amplitude_arr = math.sqrt(acceleration_x ** 2 + acceleration_y ** 2)/agentSize**3*1000 # for agent that are size order of 0.1, agentSize will be 0.001 so we multiple per 1000
         acceleration_orientation_arr = math.atan2(acceleration_y, acceleration_x)
 
         # Compute the speed using projection
@@ -652,16 +660,10 @@ def NumbaCustomEnvStep(
             orientation_arr[kEnvId, kThisAgentId]
         )
 
-        has_crossed_edge = (
-                loc_x_arr[kEnvId, kThisAgentId] < contactDistance / 2
-                or loc_x_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance / 2
-                or loc_y_arr[kEnvId, kThisAgentId] < contactDistance / 2
-                or loc_y_arr[kEnvId, kThisAgentId] > kStageSize - contactDistance / 2
-        )
 
         # EDGE CROSSING
         # Clip x and y if agent has crossed edge
-        if has_crossed_edge:
+        if kWallContactForceCoefficient==0:
             if loc_x_arr[kEnvId, kThisAgentId] < 0:
                 loc_x_arr[kEnvId, kThisAgentId] = 0.0
             elif loc_x_arr[kEnvId, kThisAgentId] > kStageSize:
