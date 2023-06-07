@@ -1,10 +1,11 @@
 --find-links https://download.pytorch.org/whl/cu113/torch_stable.html
-torch==1.10.2
+torch>=1.9, <1.11
 gym>=0.18, <0.26
 pyyaml>=5.4
-pycuda
-numba
+pycuda==2022.1
+numba>=0.54.0
 gym==0.25.2
 matplotlib
 pytorch_lightning
 tensorboard
+wandb

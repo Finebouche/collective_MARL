@@ -48,8 +48,8 @@ run_config  = dict(
 
     # Trainer settings
     trainer=dict(
-        num_envs= 512, # number of environment replicas
-        train_batch_size= 1024, # total batch size used for training per iteration (across all the environments)
+        num_envs= 500, # number of environment replicas
+        train_batch_size= 1000, # total batch size used for training per iteration (across all the environments)
         num_episodes= 10000, # number of episodes to run the training for (can be arbitrarily high)
     ),
     # Policy network settings
@@ -60,7 +60,7 @@ run_config  = dict(
             gamma= 0.98, # discount rate gamms
             lr= 0.001, # learning rate
             vf_loss_coeff= 1, # loss coefficient for the value function loss
-            entropy_coeff= [[0, 0.5], [200000, 0.1], [2000000, 0.05]], # entropy coefficient (can be a list of lists)
+            entropy_coeff= [[0, 0.5], [200000, 0.1], [2000000, 0.01]], # entropy coefficient (can be a list of lists)
             model=dict( # policy model settings
                 type= "prey_policy",
                 fc_dims= [64, 64, 64], # dimension(s) of the fully connected layers as a list
@@ -73,7 +73,7 @@ run_config  = dict(
             gamma= 0.98,
             lr= 0.001,
             vf_loss_coeff= 1,
-            entropy_coeff= [[0, 0.5], [200000, 0.1], [2000000, 0.05]], # entropy coefficient (can be a list of lists)
+            entropy_coeff= [[0, 0.5], [200000, 0.1], [2000000, 0.01]], # entropy coefficient (can be a list of lists)
             model=dict(
                 type= "predator_policy",
                 fc_dims= [64, 64, 64],
@@ -89,5 +89,7 @@ run_config  = dict(
             basedir= "/tmp", # base folder used for saving
             name= "collective_v0",
             tag= "50preys_1predator",
+            wandb=True,
+            wandb_project="rl_project"
     )
 )
