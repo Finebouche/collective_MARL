@@ -8,7 +8,7 @@ run_config  = dict(
     env =dict(
         num_preys=80,
         num_predators=3,
-        stage_size=60,
+        stage_size=50,
         episode_length=500,
         preparation_length=120,
         # Physics
@@ -27,10 +27,10 @@ run_config  = dict(
         num_acceleration_levels=10,
         num_turn_levels=10,
         # Reward parameters
-        starving_penalty_for_predator=0,
-        eating_reward_for_predator=1.0,
-        surviving_reward_for_prey=0,
-        death_penalty_for_prey=-1.0,
+        starving_penalty_for_predator=-0.0,
+        eating_reward_for_predator=10000.0,
+        surviving_reward_for_prey=.0,
+        death_penalty_for_prey=-10000.0,
         edge_hit_penalty=-0,
         end_of_game_penalty=-0,
         end_of_game_reward=0,
@@ -50,7 +50,7 @@ run_config  = dict(
     trainer=dict(
         num_envs= 500, # number of environment replicas
         train_batch_size= 1000, # total batch size used for training per iteration (across all the environments)
-        num_episodes= 10000, # number of episodes to run the training for (can be arbitrarily high)
+        num_episodes= 10000, # number of episodes to run the training for (can be arbitrarily high) 4m 30s for 10000
     ),
     # Policy network settings
     policy=dict( # list all the policies below
@@ -90,6 +90,6 @@ run_config  = dict(
             name= "collective_v0",
             tag= "50preys_1predator",
             wandb=True,
-            wandb_project="rl_project"
+            wandb_project="rl_project",
     )
 )
